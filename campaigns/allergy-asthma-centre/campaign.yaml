@@ -1,0 +1,72 @@
+name: Allergy & Asthma Centre – Colombo
+aliases: [allergy-asthma-centre, allergy, asthma, aac, colombo, clinic]
+enabled: true
+style: clinic
+timezone: Asia/Colombo
+language_rules:
+  rotation: [en, si]
+  supported: [en, si, ta]
+  locale: en-LK
+  no_em_dash: false
+post_size: [1080, 1350]
+story_size: [1080, 1920]
+plan_time: '06:30'
+post_time: '10:00'
+story_time: '17:00'
+facebook_page_id: '1054872354373231'
+instagram_account_id: '17841451553167746'
+linkedin_org_urn: ''
+palette: {background: '#F7F7F2', primary: '#0B4257', accent: '#12CFD0', bright: '#12CFD0', body: '#0B4257'}
+fonts: {headline: Montserrat, body: Inter, wordmark: Oswald, sinhala: Noto Sans Sinhala, tamil: Noto Sans Tamil}
+logo_path: assets/allergy-asthma-centre/logo.png
+premises_path: assets/allergy-asthma-centre/premises.webp
+# Right-hand pharmacy and laboratory signs are outside this crop (normalised x,y,w,h).
+premises_crop: [0.0, 0.0, 0.56, 1.0]
+screenshots: []
+reference_posts: ['assets/allergy-asthma-centre/past-posts/*.png']
+phone: '077 371 0528'
+address: 107 Vijaya Kumarathunga Mawatha, Colombo 5
+website: ''
+content_mix: {education: 7, institutional: 2, news: 1}
+rss_queries: ['asthma allergy air quality Sri Lanka', 'pollen Colombo']
+hashtag_rules: {max_count: 12, caption_only: true}
+banned_phrases:
+  - complete cure
+  - permanent cure
+  - guaranteed recovery
+  - complete relief
+  - cure asthma
+  - cure allergies
+  - instant cure
+  - permanent solution
+  - 100% effective
+  - do you have asthma
+  - are you suffering
+  - could this be happening to you
+  - are these symptoms dangerous
+  - is your cough a warning sign
+  - allergy specialist
+  - clinical allergist
+  - consultant allergist
+  - ඔබට ඇදුමද
+  - ඔබට ඇදුම ද
+  - සම්පූර්ණ සුවය
+  - නිට්ටාවට සුව
+  - ස්ථිර සුවය
+  - සහතික සුවය
+  - අසාත්මිකතා පිළිබඳ විශේෂඥ
+  - முழுமையான குணம்
+  - நிரந்தர குணம்
+  - உறுதியான குணம்
+  - உடனடி குணம்
+  - உங்களுக்கு ஆஸ்துமா உள்ளதா
+  - ஒவ்வாமை நிபுணர்
+required_footer_rules:
+  educational: true
+  disclaimer: 'මෙය පොදු සෞඛ්‍ය දැනුවත් කිරීමක් පමණි; වෛද්‍ය උපදෙසක් හෝ රෝග විනිශ්චයක් නොවේ. ඔබේ රෝග ලක්ෂණ සම්බන්ධයෙන් ලියාපදිංචි වෛද්‍යවරයෙකුගෙන් උපදෙස් ලබා ගන්න.'
+  attribution: 'විස්තර කරන්නේ / Explained by: Dr. Ajith Amarasinghe — MBBS, DCH, MD (Paediatrics), MRCP (UK), MRCPCH (UK), MBA (Health Care)'
+# Add clinically checked factual sentences here before requesting medical claims.
+# Empty means neutral awareness topics only; RSS headlines do not authorise claims.
+approved_facts: []
+feed_layouts: [type, photo, split, circle, numbered, contact]
+story_layouts: [story_type, story_photo, story_panel]

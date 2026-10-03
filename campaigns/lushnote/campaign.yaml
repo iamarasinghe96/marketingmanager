@@ -1,0 +1,33 @@
+name: LushNote
+wordmark: LUSHNOTE
+aliases: [lushnote, lush note, ln]
+enabled: true
+style: lushnote
+timezone: Australia/Sydney
+language_rules:
+  rotation: [en]
+  locale: en-AU
+  no_em_dash: true
+post_size: [1080, 1080]
+story_size: [1080, 1920]
+plan_time: '07:00'
+post_time: '12:30'
+story_time: '18:30'
+facebook_page_id: '1377201872144623'
+instagram_account_id: '17841415037476125'
+linkedin_org_urn: ''
+palette: {background: '#FFFFFF', primary: '#0F568C', accent: '#5CD5A8', bright: '#0687EF', body: '#333333'}
+fonts: {headline: Montserrat, body: Inter, wordmark: Oswald, sinhala: Noto Sans Sinhala, tamil: Noto Sans Tamil}
+logo_path: assets/lushnote/logo.png
+screenshots: ['assets/lushnote/screenshot-*.png', 'assets/lushnote/screenshot-*.jpg']
+reference_posts: ['assets/lushnote/past-posts/*.webp']
+website: www.lushnote.com.au
+content_mix: {insight: 3, product: 3, relatable: 3, news: 1}
+rss_queries: ['clinical documentation Australian healthcare', 'AI scribes Australian healthcare']
+hashtag_rules: {max_count: 5, caption_only: true}
+banned_phrases: ['guaranteed results', '100% accurate', 'permanent cure', 'HIPAA certified']
+required_footer_rules: {educational: false}
+approved_facts:
+  - LushNote is a clinical documentation and note-taking app for doctors and clinicians in Australia.
+feed_layouts: [type, photo, split, phone, circle, blue]
+story_layouts: [story_type, story_photo, story_panel]

@@ -1,0 +1,24 @@
+dry_run: true
+database: data/marketing.sqlite3
+poll_seconds: 15
+summary_timezone: Australia/Sydney
+summary_time: '21:00'
+minimum_publish_gap_minutes: 30
+groq:
+  model: llama-3.3-70b-versatile
+  daily_text_limit: 100
+gemini:
+  text_model: gemini-3.1-flash-lite
+  daily_text_limit: 50
+images:
+  provider: manual_telegram
+  request_lead_minutes: 120
+  reminder_lead_minutes: 30
+  maximum_upload_mb: 20
+meta:
+  graph_version: v26.0
+  instagram_daily_limit: 25
+linkedin:
+  enabled: false
+  api_version: '202606'
+  redirect_uri: http://localhost:8765/callback
