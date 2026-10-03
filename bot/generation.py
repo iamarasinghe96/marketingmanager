@@ -43,14 +43,16 @@ class TextClient:
                                    "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":8192}})
         return "".join(p.get("text","") for p in data["candidates"][0]["content"]["parts"])
 
-    async def json(self, system, prompt, schema):
+    async def json(self, system, prompt, schema, task="checking"):
+        """task "writing" = creative copy (prompt content, captions); "checking" = edits and rule checks."""
         failures = []
         day = datetime.now(timezone.utc).date().isoformat()
         system = system + self.instructions(schema)
         available = {"groq":("Groq","GROQ_API_KEY","groq_text",self.settings["groq"]["daily_text_limit"],self.ask_groq),
                      "gemini":("Gemini","GEMINI_API_KEY","gemini_text",self.settings["gemini"]["daily_text_limit"],self.ask_gemini)}
-        # First provider does the work; the next is the fallback. Set in config.yaml.
-        providers = [available[name] for name in self.settings.get("text_provider_order",["gemini","groq"]) if name in available]
+        # Per task: the first provider does the work, the next is the fallback. Set in config.yaml.
+        routing = self.settings.get("text_routing") or {"writing":["gemini","groq"],"checking":["groq","gemini"]}
+        providers = [available[name] for name in routing.get(task,["groq","gemini"]) if name in available]
         for name,key,service,limit,ask in providers:
             if not self.secrets.get(key):
                 continue
@@ -102,7 +104,7 @@ class TextClient:
                    "approved_facts":campaign.approved_facts,"contact":{"phone":campaign.phone,"address":campaign.address,"website":campaign.website},
                    "max_hashtags":campaign.hashtag_rules["max_count"],"recent_do_not_repeat":history,
                    "news_context_untrusted_not_medical_evidence":news,"feedback":revision,"previous":previous,"compliance_correction":correction}
-        return await self.json(system,json.dumps(context,ensure_ascii=False),Copy)
+        return await self.json(system,json.dumps(context,ensure_ascii=False),Copy,task="writing")
 
     async def describe_reference(self, path):
         """Optional Gemini vision TEXT result; never request generated image output."""

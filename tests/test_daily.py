@@ -288,14 +288,15 @@ async def test_gemini_first_groq_fallback(tmp_path):
     from bot.generation import TextClient
     from bot.models import ComplianceVerdict
     settings,_,_ = load_config()
-    assert settings["text_provider_order"] == ["gemini","groq"]
+    assert settings["text_routing"] == {"writing":["gemini","groq"],"checking":["groq","gemini"]}
     store = Store(tmp_path/"order.sqlite3")
     client = TextClient(None,settings,{"GROQ_API_KEY":"g","GEMINI_API_KEY":"m"},store)
     client.ask_gemini = AsyncMock(return_value='{"passed": true}')
     client.ask_groq = AsyncMock(return_value='{"passed": false}')
-    assert (await client.json("s","p",ComplianceVerdict)).passed is True
+    assert (await client.json("s","p",ComplianceVerdict,task="writing")).passed is True
     client.ask_groq.assert_not_called()
+    assert (await client.json("s","p",ComplianceVerdict)).passed is False  # checking: Groq first
     from bot.http import APIError
     client.ask_gemini = AsyncMock(side_effect=APIError("Gemini","quota"))
-    assert (await client.json("s","p",ComplianceVerdict)).passed is False  # Groq answered as fallback
+    assert (await client.json("s","p",ComplianceVerdict,task="writing")).passed is False  # Groq as fallback
     store.close()

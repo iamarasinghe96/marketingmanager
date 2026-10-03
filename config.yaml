@@ -11,8 +11,10 @@ poll_seconds: 15
 summary_timezone: Australia/Sydney
 summary_time: '21:00'
 minimum_publish_gap_minutes: 30
-# Text AI: the first does the work, the second is the fallback.
-text_provider_order: [gemini, groq]
+# Text AI per task: the first does the work, the second is the fallback.
+text_routing:
+  writing: [gemini, groq]    # prompt content and captions
+  checking: [groq, gemini]   # caption edits and brand/medical rule checks
 groq:
   model: openai/gpt-oss-120b
   daily_text_limit: 100
