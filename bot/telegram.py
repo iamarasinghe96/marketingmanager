@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from bot.http import request
+from bot.db import utcnow
 
 HELP = """Marketing Manager
 /status · accounts, tokens and next jobs
@@ -17,19 +18,22 @@ HELP = """Marketing Manager
 /resolve <draft ID> <facebook|instagram|linkedin> <post|story> <remote ID|not-posted>
 /help · this guide
 
-🖼 Two hours before each post/story, I send an image prompt. Copy the code block into the ChatGPT app yourself, then reply here with the result as a photo or file. Files preserve full original quality. I never use an image API or automate ChatGPT.
+🖼 Two hours before each post/story, review copy with Approve content / Rewrite / New idea. Reply Headline:, Caption: or Visual: to revise. Photo: also updates visual directions. Caption: shorter changes caption only unless you say ‘on-image text too’.
 
-Skip image uses a supplied screenshot or typography layout. New prompt rewrites the image request. Thirty minutes before publishing I remind you once if the image is still missing.
+Approve content to receive a ZIP plus individual prompt.txt, permitted logo/screenshots and style references. The prompt includes the full brand rules with CAMPAIGN INPUT filled in. Paste it into ChatGPT yourself and attach the individual files. Return the FINISHED graphic as a reply to the handoff, ZIP or any file. Send as a file for full resolution. Posts: LushNote square, AAC 4:5; stories: 9:16.
 
-After composition, use Approve / New image / New text / Skip. Reply approve, ok or 👍 to approve. Post and story have separate requests and approvals, so each can be reviewed before its own deadline.
+Check every word, logo and AAC footer in the final image, then use Approve / New image / New text / Skip, or reply approve / ok / 👍. Final approval is separate. Image replies to current final cards replace artwork and clear approval. Skip image uses HTML typography/screenshots. New prompt returns to content review. No image API or website automation is used.
 
-Photo: your direction → a fresh manual image request.
-Caption: shorter → revise caption. Say ‘on-image text too’ to change the artwork wording. You can send both instructions on separate lines.
-Any image reply to a review card replaces that draft's visual.
-An image without a reply goes to the oldest waiting image request; if several are waiting, choose with buttons.
-Photo caption ‘Use this for LushNote’ reserves it for that campaign's next free draft.
+Any ordinary message outside a draft reply starts a new idea. Send text, a screenshot/photo with an idea caption, or an album with one caption. I detect the campaign or ask LushNote / Allergy & Asthma Centre, then ask Post / Story / Both if missing.
+Example, with a screenshot/album: ‘Idea for LushNote: doctors finishing notes before leaving clinic. Make it look like this. Same layout but blue background. Both’.
 
-Idea: your topic for LushNote → draft now; today's occupied slots move it to the next free day. Free text on a pending draft is revision feedback. Reply to a specific card when several drafts exist.
+Groq fills the campaign input and preserves exact supplied text. Prohibited wording, such as an AAC cure claim, is rewritten with changes/reasons shown before approval. References become style_reference_1.jpg, _2.jpg, etc. Instructions follow their layout, composition and mood while keeping brand rules and never copying reference text, logos or names. Gemini may describe style as text; if it fails, the image is still attached.
+
+Ideas use today if free, otherwise the next free day, with the date shown. Use today instead moves the idea to today and today's drafts to the next free day. Publishing/published drafts cannot move. New idea replaces the concept in the reserved slot when you reply to its prompt.
+
+Uncaptioned images without a reply go to the sole oldest waiting request; choose with buttons if several wait. Caption ‘Use this for LushNote’ explicitly uses a source photo in the next draft's HTML layout. Older drafts retain visual-only prompts.
+
+Thirty minutes before publishing I remind you once if the image is missing, including pending content approval.
 
 Only approved, compliant content is published. Late approvals publish immediately on the same local day. Unapproved drafts expire at local midnight. Check DRY_RUN in /status before going live."""
 
@@ -71,14 +75,85 @@ class Telegram:
         # Telegram cannot deduplicate sendMessage after a lost acknowledgement.
         return await self.call("sendMessage",json=payload)
 
-    async def poll(self,offset):
-        return await self.call("getUpdates",safe_retry=True,json={"offset":offset,"timeout":25,"allowed_updates":["message","callback_query"]},timeout=35)
+    async def poll(self,offset,timeout=25):
+        return await self.call("getUpdates",safe_retry=True,json={"offset":offset,"timeout":timeout,"allowed_updates":["message","callback_query"]},timeout=timeout+10)
 
     async def answer(self,callback_id,text=""):
         return await self.call("answerCallbackQuery",safe_retry=True,json={"callback_query_id":callback_id,"text":text[:180]})
 
     def map_message(self,message_id,draft):
         self.store.execute("INSERT OR REPLACE INTO review_messages VALUES(?,?,?,?)",(self.owner,message_id,draft["id"],draft["version"]))
+
+    async def content_review(self,campaign,draft):
+        from bot.models import Copy
+        from bot.bundles import reference_requirements
+        copy = Copy.model_validate_json(draft["copy"])
+        due = self.store.one("SELECT due_at FROM schedules WHERE draft_id=?",(draft["id"],))["due_at"]
+        text = f"Content review: {label(campaign,draft,due)}\nDraft {draft['id']} · v{draft['version']}\n"
+        width,height = campaign.story_size if draft["kind"] == "story" else campaign.post_size
+        text += f"\nType: {copy.category} · Language: {copy.language}\nFormat: {width} × {height} {draft['kind']}\nPurpose: {copy.purpose or copy.topic}\nHeadline: {copy.headline}\nSupporting copy: {copy.supporting or 'NONE'}"
+        if copy.body:
+            text += "\nBody: " + copy.body
+        if copy.items:
+            text += "\nList: " + " / ".join(copy.items)
+        url = "NONE" if copy.category == "EDUCATIONAL" else copy.url or campaign.website or "NONE"
+        references = [{"path":row["path"],"description":self.store.get("reference_description:"+row["path"],"")}
+                      for row in self.store.rows("SELECT path FROM assets WHERE draft_id=? AND kind LIKE 'style_reference_%' ORDER BY id",(draft["id"],))]
+        reference_text = reference_requirements(campaign,references,self.store.get("reference_instructions:"+draft["id"],""))
+        special = "\n\n".join(part for part in (copy.special_requirements,reference_text) if part) or "NONE"
+        text += f"\nCTA: {copy.cta or 'NONE'}\nURL: {url}\nVisual: {copy.visual_brief}\nSpecial requirements: {special}\n\nCaption:\n{copy.full_caption}"
+        if copy.category == "EDUCATIONAL":
+            text += "\n\nEducational footer:\n"+campaign.required_footer_rules.get("attribution","")+"\n"+campaign.required_footer_rules.get("disclaimer","")
+        elif copy.category == "INSTITUTIONAL":
+            text += f"\n\nInstitutional contact: {campaign.phone}\n{campaign.address}"
+        if references:
+            text += f"\n\nStyle references: {len(references)} attached after content approval. Your exact reference instructions will be included."
+        reasons = json.loads(draft["compliance"])
+        if reasons:
+            text += "\n\n⚠ Content approval blocked:\n" + "\n".join(reasons)
+        warnings = json.loads(draft["warnings"])
+        if warnings:
+            text += "\n\nChanges and reasons:\n" + "\n".join(warnings)
+        text += "\n\nReply Headline:, Caption: or Visual: to revise. Content approval prepares files; approve the finished image separately before publishing."
+        prefix = f"c:{draft['id']}:{draft['version']}:"
+        buttons = [[{"text":"Approve content","callback_data":prefix+"approve"},{"text":"Rewrite","callback_data":prefix+"rewrite"}],
+                   [{"text":"New idea","callback_data":prefix+"new"}]]
+        today = utcnow().astimezone(ZoneInfo(campaign.timezone)).date().isoformat()
+        if draft["idea_group"] and draft["day"] != today:
+            buttons.append([{"text":"Use today instead","callback_data":prefix+"today"}])
+        for offset in range(0,len(text),3500):
+            last = offset + 3500 >= len(text)
+            card = await self.send(text[offset:offset+3500],buttons if last else None)
+            self.map_message(card["message_id"],draft)
+        return card
+
+    async def document(self,path,draft=None):
+        path = Path(path)
+        if path.stat().st_size > 49*1024*1024:
+            raise ValueError(f"{path.name} exceeds Telegram's document limit. Use fewer/smaller references.")
+        message = await self.call("sendDocument",data={"chat_id":str(self.owner)},files={"document":(path.name,path.read_bytes(),"application/octet-stream")})
+        if draft:
+            self.map_message(message["message_id"],draft)
+        return message
+
+    async def handoff(self,campaign,draft,row,archive,files):
+        due = self.store.one("SELECT due_at FROM schedules WHERE draft_id=?",(draft["id"],))["due_at"]
+        text = "🖼 Image needed: " + label(campaign,draft,due)
+        text += "\nContent approved. Open prompt.txt and attach the individual permitted assets in the ChatGPT app. The ZIP contains the same files. Send the FINISHED artwork as a reply to this message or any attached file. Send as a file for full quality. Check every word, logo and medical footer before final approval."
+        buttons = [[{"text":"Skip image","callback_data":f"i:{row['id']}:skip"},{"text":"New prompt","callback_data":f"i:{row['id']}:new"}]]
+        if draft["idea_group"] and draft["day"] != utcnow().astimezone(ZoneInfo(campaign.timezone)).date().isoformat():
+            buttons.append([{"text":"Use today instead","callback_data":f"i:{row['id']}:today"}])
+        message = await self.send(text,buttons)
+        self.store.execute("UPDATE image_requests SET message_id=? WHERE id=?",(message["message_id"],row["id"]))
+        self.map_message(message["message_id"],draft)
+        checkpoint = "handoff_files:"+row["id"]
+        sent = self.store.get(checkpoint,[])
+        for path in [archive,*files]:
+            if str(path) not in sent:
+                await self.document(path,draft)
+                sent.append(str(path))
+                self.store.set(checkpoint,sent)
+        return message
 
     async def review(self,campaign,draft):
         from bot.models import Copy
@@ -98,6 +173,8 @@ class Telegram:
         prefix = f"d:{draft['id']}:{draft['version']}:"
         buttons = [[{"text":"Approve","callback_data":prefix+"approve"},{"text":"New image","callback_data":prefix+"image"}],
                    [{"text":"New text","callback_data":prefix+"text"},{"text":"Skip","callback_data":prefix+"skip"}]]
+        if draft["idea_group"] and draft["day"] != utcnow().astimezone(ZoneInfo(campaign.timezone)).date().isoformat():
+            buttons.append([{"text":"Use today instead","callback_data":prefix+"today"}])
         card = await self.send(text[:4000],buttons)
         self.map_message(card["message_id"],draft)
         return card

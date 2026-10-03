@@ -17,7 +17,8 @@ def stamp():
 
 TRANSITIONS = {
     "planned": {"generating", "skipped", "failed"},
-    "generating": {"awaiting_image", "in_review", "failed", "skipped"},
+    "generating": {"awaiting_content", "awaiting_image", "in_review", "failed", "skipped"},
+    "awaiting_content": {"generating", "awaiting_image", "skipped", "failed"},
     "awaiting_image": {"generating", "in_review", "skipped", "failed"},
     "in_review": {"approved", "generating", "skipped", "failed"},
     "approved": {"publishing", "generating", "skipped", "failed"},
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS incoming_images(id TEXT PRIMARY KEY, campaign TEXT, p
  draft_id TEXT, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS notifications(key TEXT PRIMARY KEY, text TEXT, created_at TEXT, sent INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS media_albums(id TEXT PRIMARY KEY, messages TEXT NOT NULL, ready_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending');
 CREATE INDEX IF NOT EXISTS idx_drafts_state ON drafts(state);
 CREATE INDEX IF NOT EXISTS idx_pub_draft ON publications(draft_id);
 """
@@ -75,6 +77,15 @@ class Store:
         self.conn.execute("PRAGMA busy_timeout=20000")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        # Additive migrations preserve existing drafts, tokens and publication receipts.
+        for table, additions in {
+            "drafts": {"delivery_mode": "TEXT NOT NULL DEFAULT 'visual'", "idea_group": "TEXT", "content_approved_version": "INTEGER"},
+            "image_requests": {"mode": "TEXT NOT NULL DEFAULT 'visual'"},
+        }.items():
+            existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+            for name, definition in additions.items():
+                if name not in existing:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
         self.conn.commit()
 
     def close(self):
@@ -119,12 +130,13 @@ class Store:
     def draft(self, draft_id):
         return self.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
 
-    def reserve_draft(self, campaign, day, kind, due_at, idea=""):
+    def reserve_draft(self, campaign, day, kind, due_at, idea="", delivery_mode="visual", idea_group=None):
         draft_id = uuid.uuid4().hex[:12]
         with self.transaction():
             self.conn.execute("INSERT INTO drafts(id,campaign,day,kind,idea,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                               (draft_id, campaign, day.isoformat(), kind, idea, stamp(), stamp()))
             self.conn.execute("INSERT INTO schedules(draft_id,kind,due_at) VALUES(?,?,?)", (draft_id,kind,due_at.isoformat()))
+            self.conn.execute("UPDATE drafts SET delivery_mode=?,idea_group=? WHERE id=?", (delivery_mode,idea_group,draft_id))
             if idea:
                 self.conn.execute("INSERT INTO ideas_queue(campaign,day,text,draft_id,created_at) VALUES(?,?,?,?,?)",
                                   (campaign,day.isoformat(),idea,draft_id,stamp()))
@@ -136,13 +148,13 @@ class Store:
             if not current or target not in TRANSITIONS[current["state"]]:
                 raise ValueError(f"Cannot move draft to {target}")
             fields.update(state=target, updated_at=stamp())
-            allowed = {"state", "updated_at", "approved_version", "error", "immediate", "reminded"}
+            allowed = {"state", "updated_at", "approved_version", "content_approved_version", "error", "immediate", "reminded"}
             if not set(fields) <= allowed:
                 raise ValueError("Unknown draft field")
             sql = ",".join(f"{key}=?" for key in fields)
             self.conn.execute(f"UPDATE drafts SET {sql} WHERE id=?", (*fields.values(),draft_id))
 
-    def save_version(self, draft_id, copy, post_path, story_path, layouts, reasons, warnings, awaiting_image=False):
+    def save_version(self, draft_id, copy, post_path, story_path, layouts, reasons, warnings, awaiting_image=False, awaiting_content=False):
         with self.transaction():
             row = self.draft(draft_id)
             if row["state"] != "generating":
@@ -156,7 +168,7 @@ class Store:
                               "feed_variant=?,story_variant=?,compliance=?,warnings=?,state=?,approved_version=NULL,"
                               "error=NULL,updated_at=? WHERE id=?",
                               (version,data,str(post_path or ''),str(story_path or ''),*layouts,reason_json,warning_json,
-                               'awaiting_image' if awaiting_image else 'in_review',stamp(),draft_id))
+                               'awaiting_content' if awaiting_content else 'awaiting_image' if awaiting_image else 'in_review',stamp(),draft_id))
             self.conn.execute("INSERT OR REPLACE INTO history VALUES(?,?,?,?,?,?,?,?,?)",
                               (draft_id,row["campaign"],row["day"],copy.topic,copy.headline,*layouts))
             for kind, path in (("post",post_path),("story",story_path)):
@@ -167,7 +179,7 @@ class Store:
         return self.draft(draft_id)
 
     def pending(self):
-        return self.rows("SELECT * FROM drafts WHERE state IN ('awaiting_image','in_review','approved','failed') ORDER BY created_at DESC")
+        return self.rows("SELECT * FROM drafts WHERE state IN ('awaiting_content','awaiting_image','in_review','approved','failed') ORDER BY created_at DESC")
 
     def token(self, service, account):
         return self.one("SELECT * FROM tokens WHERE service=? AND account=?", (service,account))

@@ -9,6 +9,7 @@ class Copy(BaseModel):
     topic: str = Field(min_length=2, max_length=160)
     headline: str = Field(min_length=2, max_length=160)
     supporting: str = Field(default="", max_length=280)
+    body: str = Field(default="", max_length=280)
     items: list[str] = Field(default_factory=list, max_length=3)
     cta: str = Field(default="", max_length=70)
     caption: str = Field(min_length=2, max_length=1700)
@@ -16,6 +17,10 @@ class Copy(BaseModel):
     visual_brief: str = Field(min_length=2, max_length=1200)
     visual_kind: Literal["photo", "illustration", "screenshot", "premises", "none"]
     screenshot_index: int = Field(default=0, ge=0)
+    purpose: str = Field(default="", max_length=400)
+    url: str = Field(default="", max_length=200)
+    special_requirements: str = Field(default="", max_length=1800)
+    changes: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("items")
     @classmethod
@@ -45,3 +50,9 @@ class ComplianceVerdict(BaseModel):
 
 class MessageIntent(BaseModel):
     action: Literal["idea","revision"]
+
+
+class ReferenceGuidance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instructions: str = Field(max_length=1800)
+    changes: list[str] = Field(default_factory=list, max_length=8)

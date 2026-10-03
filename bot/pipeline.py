@@ -16,12 +16,14 @@ class Pipeline:
     def __init__(self,settings,campaigns,store,text,images,telegram,meta,linkedin):
         self.settings,self.campaigns,self.store = settings,campaigns,store
         self.text,self.images,self.telegram,self.meta,self.linkedin = text,images,telegram,meta,linkedin
+        from bot.content import ContentFlow
+        self.content = ContentFlow(self)
 
-    def reserve(self,campaign,day,kind,idea=""):
+    def reserve(self,campaign,day,kind,idea="",delivery_mode="visual",idea_group=None):
         post,story = slots_for(self.campaigns,campaign,day,self.settings["minimum_publish_gap_minutes"])
-        return self.store.reserve_draft(campaign.slug,day,kind,post if kind == "post" else story,idea)
+        return self.store.reserve_draft(campaign.slug,day,kind,post if kind == "post" else story,idea,delivery_mode,idea_group)
 
-    async def generate_now(self,slug,idea="",image=None):
+    async def generate_now(self,slug,idea="",image=None,delivery_mode="finished"):
         c = self.campaigns[slug]
         if not c.enabled or self.store.paused(slug):
             await self.telegram.send(f"{c.name} is paused or disabled. Use /resume first.")
@@ -29,7 +31,7 @@ class Pipeline:
         day = next_free_day(self.store,c,utcnow(),self.campaigns,self.settings["minimum_publish_gap_minutes"])
         await self.telegram.send(f"Preparing {c.name} for {day:%a %d %b %Y} ({c.timezone}).")
         for kind in ("post","story"):
-            draft = self.reserve(c,day,kind,idea)
+            draft = self.reserve(c,day,kind,idea,delivery_mode)
             await self.prepare(draft,image=image)
 
     def history(self,draft):
@@ -37,16 +39,19 @@ class Pipeline:
         return self.store.rows("SELECT h.* FROM history h JOIN drafts d ON d.id=h.draft_id WHERE h.campaign=? AND h.day>=? AND h.draft_id<>? AND d.kind=? ORDER BY h.day DESC,h.rowid DESC LIMIT 30",
                                (draft["campaign"],cutoff,draft["id"],draft["kind"]))
 
-    def ensure_revisable(self,draft):
+    def ensure_revisable(self,draft,clear_prepared=True):
         if draft["state"] in {"published","publishing","skipped"}:
             raise ValueError("This draft can no longer be revised")
         if self.store.one("SELECT idempotency_key FROM publications WHERE draft_id=? AND status IN ('sending','unknown','completed') AND idempotency_key LIKE 'live:%'",(draft["id"],)):
             raise ValueError("Publishing has already begun. Resolve/retry the existing publication first.")
         # Disposable uploads/containers from known rejected attempts refer to old
         # artwork. Clear them when revising, so a retry cannot publish stale media.
-        self.store.execute("UPDATE publications SET status='reserved',stage=NULL,remote_id=NULL,container_id=NULL,upload_id=NULL,permalink=NULL,error=NULL WHERE draft_id=? AND status IN ('reserved','prepared','failed')",(draft["id"],))
+        if clear_prepared:
+            self.store.execute("UPDATE publications SET status='reserved',stage=NULL,remote_id=NULL,container_id=NULL,upload_id=NULL,permalink=NULL,error=NULL WHERE draft_id=? AND status IN ('reserved','prepared','failed')",(draft["id"],))
 
     async def prepare(self,draft,revision=None,image=None):
+        if draft.get("delivery_mode") == "finished":
+            return await self.content.prepare(draft,revision)
         self.ensure_revisable(draft)
         c = self.campaigns[draft["campaign"]]
         history = self.history(draft)
@@ -99,6 +104,10 @@ class Pipeline:
         return self.store.draft(draft["id"])
 
     async def new_image(self,draft,instructions=""):
+        if draft.get("delivery_mode") == "finished":
+            if instructions:
+                return await self.content.prepare(draft,{"visual":instructions})
+            return await self.content.request(draft)
         self.ensure_revisable(draft)
         if draft["state"] not in {"in_review","approved","awaiting_image","failed"}:
             raise ValueError("Only an unpublished draft can be revised")
@@ -150,6 +159,8 @@ class Pipeline:
             return
         reasons = list(dict.fromkeys(json.loads(draft["compliance"]) + await check(c,copy,self.text)))
         new_draft = self.store.save_version(draft["id"],copy,target if kind == "post" else None,target if kind == "story" else None,layouts,reasons,warnings)
+        if draft.get("delivery_mode") == "finished":
+            self.store.execute("UPDATE drafts SET content_approved_version=version WHERE id=?",(draft["id"],))
         self.store.execute("UPDATE image_requests SET status='superseded' WHERE draft_id=? AND status='pending'",(draft["id"],))
         await self.telegram.review(c,new_draft)
         self.store.set("review_sent:" + draft["id"],new_draft["version"])

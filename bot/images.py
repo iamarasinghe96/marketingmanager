@@ -4,6 +4,7 @@ import json
 import uuid
 from pydantic import BaseModel, Field
 from bot.db import stamp
+from bot.config import ROOT
 
 
 class ImagePrompt(BaseModel):
@@ -26,6 +27,8 @@ class ManualTelegramProvider(ImageProvider):
         self.store,self.telegram,self.text = store,telegram,text_client
 
     async def request(self,campaign,draft,instructions=""):
+        if draft.get("delivery_mode") == "finished":
+            return await self.finished_request(campaign,draft)
         from bot.models import Copy
         copy = Copy.model_validate_json(draft["copy"])
         old = self.store.one("SELECT prompt FROM image_requests WHERE draft_id=? ORDER BY created_at DESC LIMIT 1",(draft["id"],))
@@ -48,6 +51,21 @@ class ManualTelegramProvider(ImageProvider):
         await self.telegram.image_request(campaign,draft,row)
         return row
 
+    async def finished_request(self,campaign,draft):
+        from bot.bundles import build_bundle
+        references = [{"path":row["path"],"description":self.store.get("reference_description:"+row["path"],"")}
+                      for row in self.store.rows("SELECT path FROM assets WHERE draft_id=? AND kind LIKE 'style_reference_%' ORDER BY id",(draft["id"],))]
+        draft = {**draft,"reference_instructions":self.store.get("reference_instructions:"+draft["id"],None)}
+        archive,files = build_bundle(campaign,draft,references,ROOT/"out"/"handoffs"/draft["id"]/f"v{draft['version']}")
+        prompt = files[0].read_text(encoding="utf-8")
+        self.store.execute("UPDATE image_requests SET status='superseded' WHERE draft_id=? AND status='pending'",(draft["id"],))
+        request_id = uuid.uuid4().hex[:12]
+        self.store.execute("INSERT INTO image_requests(id,draft_id,version,kind,prompt,created_at,mode) VALUES(?,?,?,?,?,?,?)",
+                           (request_id,draft["id"],draft["version"],draft["kind"],prompt,stamp(),"finished"))
+        row = self.store.one("SELECT * FROM image_requests WHERE id=?",(request_id,))
+        await self.telegram.handoff(campaign,draft,row,archive,files)
+        return row
+
     async def submit(self,request_id,path):
         row = self.store.one("SELECT * FROM image_requests WHERE id=? AND status='pending'",(request_id,))
         if not row:
@@ -57,7 +75,7 @@ class ManualTelegramProvider(ImageProvider):
             raise ValueError("This image request is for an older draft. Reply to the newest request.")
         self.store.execute("UPDATE image_requests SET status='received',asset_path=? WHERE id=?",(str(path),request_id))
         self.store.execute("INSERT INTO assets(draft_id,version,kind,path,created_at) VALUES(?,?,?,?,?)",
-                           (draft["id"],draft["version"],"original_"+draft["kind"],str(path),stamp()))
+                           (draft["id"],draft["version"],"finished_original" if row["mode"] == "finished" else "original_"+draft["kind"],str(path),stamp()))
         return draft
 
     async def skip(self,request_id):

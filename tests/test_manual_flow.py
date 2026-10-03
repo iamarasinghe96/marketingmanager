@@ -28,6 +28,8 @@ def app(tmp_path,monkeypatch):
     app.telegram.send=AsyncMock(return_value={"message_id":1})
     app.telegram.review=AsyncMock()
     app.telegram.image_request=AsyncMock()
+    app.telegram.content_review=AsyncMock()
+    app.telegram.handoff=AsyncMock()
     app.text.write=AsyncMock(return_value=sample(campaigns["lushnote"]))
     app.text.json=AsyncMock(return_value=ImagePrompt(prompt="A quiet clinical desk photographed in ordinary natural light."))
     app.meta.health=AsyncMock(return_value=[])
@@ -42,6 +44,8 @@ def app(tmp_path,monkeypatch):
     monkeypatch.setattr("bot.pipeline.render_one",fake_render)
     monkeypatch.setattr("bot.pipeline.select_visual",lambda campaign,copy,provided,out_dir:provided)
     monkeypatch.setattr("bot.pipeline.ROOT",tmp_path)
+    monkeypatch.setattr("bot.content.ROOT",tmp_path)
+    monkeypatch.setattr("bot.images.ROOT",tmp_path)
     yield app
     db.close()
 
@@ -59,8 +63,10 @@ async def test_request_two_hours_before_and_remind_once(app,monkeypatch):
     clock(monkeypatch,due-timedelta(hours=2))
     await app.tick()
     draft=app.store.one("SELECT * FROM drafts WHERE kind='post'")
-    assert draft["state"]=="awaiting_image"
-    app.telegram.image_request.assert_awaited_once()
+    assert draft["state"]=="awaiting_content"
+    app.telegram.content_review.assert_awaited_once()
+    await app.pipeline.content.approve(draft)
+    app.telegram.handoff.assert_awaited_once()
     clock(monkeypatch,due-timedelta(minutes=30))
     await app.tick();await app.tick()
     assert len(app.store.rows("SELECT * FROM notifications WHERE key LIKE 'image_reminder:%'"))==1

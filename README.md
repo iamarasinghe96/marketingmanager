@@ -1,6 +1,6 @@
 # Marketing Manager
 
-A Windows bot for LushNote and Allergy & Asthma Centre – Colombo. It writes copy with Groq (Gemini **text only** is the fallback), asks you for images through Telegram, renders the artwork with the supplied assets, and publishes **only approved** posts and stories to Facebook and Instagram. LinkedIn company posts are included but disabled until your API access is approved.
+A Windows bot for LushNote and Allergy & Asthma Centre – Colombo. Groq writes campaign copy, Telegram handles content and final image approval, and the bot packages brand prompts and assets for your manual ChatGPT handoff. It publishes approved posts and stories to Facebook and Instagram. Gemini supplies text fallback and optional reference descriptions, never generated images. LinkedIn company posts are included but disabled until your API access is approved.
 
 Images come from you. There is **no image API**, no automated ChatGPT interaction, no browser login automation, no dashboard, no public website and no inbound internet port. Chromium runs only while rendering your artwork.
 
@@ -63,18 +63,38 @@ Telegram receives “Marketing Manager is online”. Use `/help` for the complet
 
 Each campaign has one **post** and one **story** slot per local day. Requests and approvals are separate so a story can be reviewed before its own later deadline.
 
-1. **Two hours before each publish time**, the bot writes the headline, caption, visual brief and a copyable image prompt. You receive a title such as `🖼 Image needed: LushNote · Post · Sat 3 Oct 12:30 AEST`, the headline, the prompt in a monospace code block, and the draft caption. The actual date and timezone abbreviation reflect daylight saving time.
-2. Copy the prompt into the **ChatGPT app yourself**. The prompt uses the campaign's full editable brand policy, restricts photography/illustration, and says **“no text, no logos, no UI, no watermarks”**. Aspect ratios are 1:1 for LushNote posts, 4:5 for clinic posts and 9:16 for stories. The bot never opens or controls ChatGPT.
-3. Reply to the image request with the result as a **photo or image file**. PNG, JPEG and WebP are accepted, under 20 MB and 40 megapixels. Telegram compresses photos; the largest delivered photo is retained unchanged. **Send as a file/document for the original full resolution.** Original bytes are stored under `out/originals/`; artwork crops do not change those files.
-4. Alternatively, choose **Skip image** for typography or a real supplied LushNote screenshot. **New prompt** rewrites the prompt with a new composition.
-5. The bot fits/crops the image, adds exact text and real permitted brand assets, checks readability/compliance, and sends the finished review image plus caption. Choose **Approve**, **New image**, **New text** or **Skip**. Reply `approve`, `ok` or `👍` to approve the current card.
-6. Reply `Photo: a quieter desk scene` to receive a new manual image request. Reply `Caption: shorter` to rewrite the caption. Add “on-image text too” to change the headline/supporting copy. Both instructions may appear on separate lines; `photo -` and `caption-` work too.
-7. **Any image reply to the latest review card replaces its visual**, recomposes it and clears approval. Older cards cannot approve newer revisions. Published content cannot be silently edited or reposted.
-8. An image without a reply is attached to the oldest waiting image request when only one is pending. When several are waiting, buttons let you choose, oldest first.
-9. Caption a real photo **`Use this for LushNote`** (or the clinic name) to reserve it for that campaign's next free draft and generate the copy immediately. It works with any suitable image, regardless of where you created it. When the campaign is unclear, choose it with buttons.
-10. If an image is still missing **30 minutes before publishing**, the bot reminds you once. It does not publish missing-image/unapproved drafts at their deadline. Approved drafts publish at the scheduled time; late approval publishes immediately **on the same local day**. Drafts expire at local midnight.
+1. **Two hours before each publish time**, review the generated campaign input and caption with **Approve content / Rewrite / New idea**. The card includes purpose, headline, supporting copy, CTA, URL, primary visual and special requirements; AAC also identifies type, format and language. Reply `Headline: Home on time.`, `Caption: shorter` or `Visual: a quiet clinic desk` to revise.
+2. **Approve content** to receive a **ZIP and every individual file**: `prompt.txt`, the permitted official logo, supplied screenshots or relevant clinic premises crop, and your style references. The prompt contains the **full brand prompt, word for word**, with its CAMPAIGN INPUT filled in. A separate size instruction overrides generic square-post wording for stories. Educational AAC handoffs exclude the clinic logo, contacts and premises and include the exact approved footer.
+3. Paste `prompt.txt` into the **ChatGPT app yourself** and attach the individual assets. Ask for the **finished graphic** with the approved exact text and permitted branding. Sizes are 1080 × 1080 for LushNote posts, 1080 × 1350 for AAC posts and 1080 × 1920 for stories. The bot never opens or controls ChatGPT or any other website.
+4. Reply to the handoff message, ZIP or any individual file with the finished **photo or image document**. PNG, JPEG and WebP are accepted, under 20 MB and 40 megapixels. **Send as a file/document for original full resolution.** Originals stay unchanged in `out/originals/`; a separate publishing copy is resized. Wrong aspect ratios are rejected to avoid cropping away text or logos.
+5. Check **every word, logo and AAC medical footer** in the final image, then use **Approve / New image / New text / Skip**. Reply `approve`, `ok` or `👍` to approve the current card. Automatic checks validate campaign copy; your review verifies the lettering and assets inside the returned image. Post and story have separate content and final approvals.
+6. **Skip image** uses the HTML typography or supplied-screenshot layout. **New prompt**, `Photo:` and `Visual:` return to content review with updated visual directions; approve that revision for a new handoff. `Caption: shorter` changes caption only unless you request “on-image text too”. General feedback works as a reply to a draft.
+7. **Any new image reply to the latest final card replaces the artwork and clears approval.** Old cards cannot approve newer revisions. An uncaptioned image without a reply goes to the sole oldest pending image request; if several requests are waiting, choose with buttons, oldest first.
+8. Caption a source photo **`Use this for LushNote`** (or the clinic name) to use it as the next free draft's visual with HTML composition and real branding. Existing drafts created before this update retain their visual-only image prompts, including **“no text, no logos, no UI, no watermarks”**.
+9. If an image is missing **30 minutes before publishing**, the bot reminds you once, including when content approval is pending. Nothing publishes without final approval. Late approval publishes immediately **on the same local day**. Drafts expire at local midnight.
 
-When several drafts are pending, reply directly to the relevant card or choose the draft with buttons. Unlabelled text on a pending draft is general revision feedback. To submit a new idea while drafts exist, prefix it with `Idea:`, for example `Idea: after-hours notes for LushNote`. Ideas are drafted immediately; occupied days move them to the next free day and Telegram tells you the date.
+### Send an idea with style references
+
+**Every ordinary text message outside a reply to a draft starts a new idea**, even while drafts are waiting. Send plain text, a screenshot/photo with an idea caption, or several photos as a **Telegram album with one caption**. Its images become style references. Use `Use this for ...` when you want a source photo itself used in the artwork.
+
+For example, send a screenshot or album with:
+
+```text
+Idea for LushNote: doctors finishing notes before leaving clinic.
+Make it look like this. Same layout but blue background.
+Headline: Home on time.
+Both
+```
+
+If the campaign is unclear, choose **LushNote / Allergy & Asthma Centre**. If the format is missing, choose **Post / Story / Both**. Groq fills the campaign input, preserves exact supplied wording, and applies brand and medical rules. A prohibited cure claim is rewritten with the change and reason shown before approval; failed compliance checks block approval.
+
+References become **`style_reference_1.jpg`, `style_reference_2.jpg`**, and so on, in the ZIP and individual files. The uploaded originals remain saved separately. Each LushNote reference adds this to SPECIAL REQUIREMENTS:
+
+> STYLE REFERENCE ATTACHED (style_reference_1.jpg): follow its layout approach, composition, mood and visual treatment as closely as possible while keeping all LushNote brand rules (logo, colours, typography, text control). Do not copy any text, logos or brand names from the reference.
+
+AAC uses its own brand name in the same instruction; educational/institutional separation takes priority. Your exact visual directions are included, subject to compliance. Gemini may describe reference layout and mood **as text** for Groq; if that fails, the image is still attached. No image-generation API is used.
+
+Ideas use today if the campaign day is free, including a passed slot that can publish after same-day final approval. Otherwise the bot tells you the next free date. **Use today instead** moves your idea, including both formats when selected, to today and moves today's drafts to the next free day, including the day your idea vacates. Published or publishing drafts cannot move. **New idea** lets you reply with a replacement concept using the current reserved slot and references.
 
 ### Telegram commands
 

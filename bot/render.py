@@ -171,7 +171,7 @@ def compose_html(campaign,copy,layout,variant,visual,kind):
     if layout in {"type","blue","story_type"}:
         head_max = 164 if not multilingual else 112
     head_min = 50 if multilingual else 48
-    head_height = text_h * (.48 if copy.supporting or copy.items else .70 if copy.cta else .90)
+    head_height = text_h * (.48 if copy.supporting or copy.body or copy.items else .70 if copy.cta else .90)
     body_height = text_h*.26
     cta_height = text_h*.12
     header = ""
@@ -186,7 +186,7 @@ def compose_html(campaign,copy,layout,variant,visual,kind):
         footer = f'<div class="phone-number">{escape(campaign.phone)}</div><div class="address">{escape(campaign.address)}</div>'
     else:
         footer = f'<div class="url">{escape(campaign.website)}</div>'
-    body = escape(copy.supporting)
+    body = escape("\n".join(part for part in (copy.supporting,copy.body) if part)).replace("\n","<br>")
     if copy.items:
         body += '<ul>' + ''.join('<li>' + escape(item) + '</li>' for item in copy.items) + '</ul>'
     body_html = f'<div id="support" class="support" data-fit data-min="{26 if not multilingual else 30}" data-max="{36 if not multilingual else 40}">{body}</div>' if body else ''

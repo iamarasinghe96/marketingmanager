@@ -20,8 +20,10 @@ def deterministic_check(campaign, copy: Copy):
     supported = campaign.language_rules.get("supported",campaign.language_rules["rotation"])
     if copy.language not in supported:
         reasons.append("Language is not enabled for this campaign")
-    on_image = " ".join([copy.headline,copy.supporting,copy.cta,*copy.items])
-    text = " ".join([on_image,copy.full_caption,copy.visual_brief])
+    on_image = " ".join([copy.headline,copy.supporting,copy.body,copy.cta,*copy.items])
+    text = " ".join([on_image,copy.full_caption,copy.visual_brief,copy.special_requirements,copy.purpose,copy.url])
+    if copy.url and copy.url != campaign.website:
+        reasons.append("URL must match the supplied campaign website, or be empty")
     hits = banned_matches(text,campaign.banned_phrases)
     if hits:
         reasons.append("Banned wording: " + ", ".join(hits))
@@ -34,8 +36,7 @@ def deterministic_check(campaign, copy: Copy):
     if campaign.style == "lushnote":
         if copy.category != "MARKETING":
             reasons.append("LushNote must use the MARKETING category")
-        if not copy.headline.endswith("."):
-            reasons.append("LushNote headlines must end with a full stop")
+        # New copy is prompted to end with a full stop. Exact owner wording wins.
     else:
         if copy.category == "MARKETING":
             reasons.append("Clinic content must be EDUCATIONAL or INSTITUTIONAL")
