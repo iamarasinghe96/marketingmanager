@@ -351,3 +351,17 @@ def test_hashtags_in_caption_are_moved_and_contact_allowed():
     assert deterministic_check(aac,copy) == []
     pitch = copy.model_copy(update={"caption":"Book an appointment today."})
     assert "Educational copy contains booking promotion" in deterministic_check(aac,pitch)
+
+
+def test_sinhala_prompt_gets_accuracy_rules_and_exact_text():
+    from bot.bundles import filled_prompt
+    aac = load_config()[1]["allergy-asthma-centre"]
+    si = sample(aac,"si")
+    prompt = filled_prompt(aac,{"copy":si.model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
+    assert "SINHALA TEXT ACCURACY" in prompt and prompt.index("SINHALA TEXT ACCURACY") < prompt.index("\nCAMPAIGN INPUT\n")
+    tail = prompt.split("TEXT TO RENDER - copy each line exactly")[1]
+    assert si.headline in tail and si.supporting in tail
+    en = filled_prompt(aac,{"copy":sample(aac,"en").model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
+    assert "TEXT ACCURACY" not in en and "TEXT TO RENDER" not in en
+    ta = filled_prompt(aac,{"copy":sample(aac,"ta").model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
+    assert "TAMIL TEXT ACCURACY" in ta

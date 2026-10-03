@@ -99,7 +99,30 @@ def filled_prompt(campaign, draft, references):
                      "NO icons, NO icon circles or coloured badges, NO icon grid, NO infographic, NO sparkles, NO glossy effects, "
                      "NO stock-photo person smiling at the sky. Do not add list items, labels or text beyond the CAMPAIGN INPUT. "
                      "Generous empty space; when unsure, remove elements.\n\n")
+    if copy.language in SCRIPT_RULES:
+        override += SCRIPT_RULES[copy.language] + "\n\n"
+        exact = [line for line in [copy.headline, copy.supporting, copy.body, *copy.items, copy.cta] if line]
+        brand += ("\n\nTEXT TO RENDER - copy each line exactly, letter by letter, and add no other " +
+                  {"si": "Sinhala", "ta": "Tamil"}[copy.language] + " text:\n" + "\n".join("- " + line for line in exact) + "\n")
     return override + brand
+
+
+# AI image models often break Sinhala/Tamil letters; these rules reduce (not eliminate) errors.
+SCRIPT_RULES = {
+    "si": ("SINHALA TEXT ACCURACY (critical): Sinhala is easy to render wrongly. Keep the Sinhala text short and LARGE. "
+           "Copy every word from 'TEXT TO RENDER' at the end letter by letter; never guess, retype, decorate or invent letters. "
+           "Each vowel sign (ා ැ ෑ ි ී ු ූ ෘ ෙ ේ ෛ ො ෝ ෞ) and the hal kirima (්) belongs to the letter before it. "
+           "Take special care with ඳ ඬ ඟ ඹ, ළ ළු, ඥ, ඤ and joined forms (rakaransaya ්‍ර, yansaya ්‍ය, repaya ර්‍). "
+           "Use one plain, regular Sinhala typeface similar to Noto Sans Sinhala or Iskoola Pota; no stylised or "
+           "condensed Sinhala, no outlines or effects. No stray marks, dots or colons inside words. "
+           "After drawing, check every Sinhala word against TEXT TO RENDER and fix any difference."),
+    "ta": ("TAMIL TEXT ACCURACY (critical): Tamil is easy to render wrongly. Keep the Tamil text short and LARGE. "
+           "Copy every word from 'TEXT TO RENDER' at the end letter by letter; never guess, retype, decorate or invent letters. "
+           "Each vowel sign (ா ி ீ ு ூ ெ ே ை ொ ோ ௌ) and the pulli (்) belongs to the correct consonant; ெ ே ை are written "
+           "before the consonant they belong to. Take care with ள ழ ல, ண ன ந, and ஶ ஜ ஷ ஸ ஹ க்ஷ. "
+           "Use one plain, regular Tamil typeface similar to Noto Sans Tamil or Latha; no stylised Tamil, no outlines or effects. "
+           "No stray marks inside words. After drawing, check every Tamil word against TEXT TO RENDER and fix any difference."),
+}
 
 
 def build_bundle(campaign, draft, references, directory):

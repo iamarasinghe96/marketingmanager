@@ -88,6 +88,10 @@ class TextClient:
         system += ("visual_brief: describe ONE restrained visual in plain words (one editorial photo, one simple flat illustration, "
                    "or typography only). Never ask for icons, icon sets, an icon per item, infographics, badges or collages. "
                    "Prefer ordinary, candid, unposed scenes. At most 3 short list items. ")
+        if language in ("si", "ta"):
+            system += ("This post is in Sinhala/Tamil, which image tools render poorly: keep ON-IMAGE text minimal. Headline at most "
+                       "5 words, supporting at most 10 words, body empty, at most 2 list items of at most 4 words each. Use plain, common "
+                       "words; avoid rare conjunct letters where a simpler word works. Put the fuller explanation in the caption. ")
         if campaign.style == "clinic":
             system += ("NO PEOPLE in the visual: no faces, bodies or hands. Choose nature (plants, flowers, pollen, trees, sky, "
                        "leaves), animals or everyday objects; one soft natural photograph is preferred. ")
