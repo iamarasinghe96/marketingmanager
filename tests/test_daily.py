@@ -319,3 +319,13 @@ def test_reset_today_keeps_published_in_live_mode(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(reset_today,"load_config",lambda:({**settings,"database":"r.sqlite3","dry_run":True},{},{}))
     reset_today.main()
     assert sqlite3.connect(tmp_path/"r.sqlite3").execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+
+
+async def test_retry_while_waiting_for_image_gives_a_new_prompt(app,monkeypatch):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    app.text.json = AsyncMock()
+    await app.daily.on_text({"message_id":2,"text":"Retry"})
+    app.text.json.assert_not_called()  # not treated as a caption edit
+    assert app.text.write.await_count == 2 and app.telegram.document.await_count >= 3
+    assert len(app.daily.sessions(app.daily.today())) == 1

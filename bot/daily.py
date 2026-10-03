@@ -49,6 +49,10 @@ def is_greeting(text):
     return text.casefold().strip(" .!👋") in GREETINGS
 
 
+def is_new_prompt(text):
+    return text.casefold().strip(" .!") in {"retry", "try again", "again", "redo", "new prompt", "new one", "another one", "different topic"}
+
+
 def is_approval(text):
     return text.casefold().strip(" .!") in {"approve", "approved", "ok", "okay", "👍", "yes", "post it", "post"}
 
@@ -214,6 +218,10 @@ class DailyFlow:
                 await self.telegram.send(f"{self.campaigns[session['campaign']].name}: send me the finished image first.")
                 return
             return await self.publish(session)
+        if is_new_prompt(text) and session["state"] in ("awaiting_image", "failed"):
+            # Start this campaign's prompt again from scratch (a new topic and caption).
+            self.store.execute("DELETE FROM sessions WHERE id=?", (session["id"],))
+            return await self.start_one(session)
         await self.edit(session, text)
 
     async def on_photo(self, message, path):
@@ -513,7 +521,7 @@ HELP = """Marketing Manager – daily flow
 6. Reply "approve" and I post it straight away to Facebook and Instagram, as a post and a story.
 
 If something is unfinished I remind you once. Anything unfinished is dropped at midnight; nothing carries over.
-Tip: "hi, idea: <your idea>" uses your idea for today's prompt.
+Tip: "hi, idea: <your idea>" uses your idea for today's prompt. Reply "retry" before sending the image to get a different prompt.
 
 /status · accounts and today's progress
 /pause [campaign] · /resume [campaign]
