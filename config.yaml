@@ -5,7 +5,7 @@ summary_timezone: Australia/Sydney
 summary_time: '21:00'
 minimum_publish_gap_minutes: 30
 groq:
-  model: llama-3.3-70b-versatile
+  model: openai/gpt-oss-120b
   daily_text_limit: 100
 gemini:
   text_model: gemini-3.1-flash-lite
