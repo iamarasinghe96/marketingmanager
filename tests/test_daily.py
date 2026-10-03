@@ -300,3 +300,22 @@ async def test_gemini_first_groq_fallback(tmp_path):
     client.ask_gemini = AsyncMock(side_effect=APIError("Gemini","quota"))
     assert (await client.json("s","p",ComplianceVerdict,task="writing")).passed is False  # Groq as fallback
     store.close()
+
+
+def test_reset_today_keeps_published_in_live_mode(tmp_path,monkeypatch,capsys):
+    import sqlite3
+    from bot import reset_today
+    settings,campaigns,_ = load_config()
+    store = Store(tmp_path/"r.sqlite3")
+    App(None,{**settings,"workflow":"daily"},campaigns,{"TELEGRAM_OWNER_CHAT_ID":"1"},store)
+    day = datetime.now(timezone.utc).astimezone(__import__("zoneinfo").ZoneInfo("Australia/Sydney")).date().isoformat()
+    for i,state in enumerate(["published","awaiting_image"]):
+        store.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at) VALUES(?,?,?,?,?,?)",(str(i),f"c{i}",day,state,"x","x"))
+    store.close()
+    monkeypatch.setattr(reset_today,"ROOT",tmp_path)
+    monkeypatch.setattr(reset_today,"load_config",lambda:({**settings,"database":"r.sqlite3","dry_run":False},{},{}))
+    reset_today.main()
+    assert [r[0] for r in sqlite3.connect(tmp_path/"r.sqlite3").execute("SELECT state FROM sessions")] == ["published"]
+    monkeypatch.setattr(reset_today,"load_config",lambda:({**settings,"database":"r.sqlite3","dry_run":True},{},{}))
+    reset_today.main()
+    assert sqlite3.connect(tmp_path/"r.sqlite3").execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0

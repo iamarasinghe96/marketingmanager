@@ -5,6 +5,8 @@ $pythonConsole = Join-Path $projectRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '.git'))) {
     throw 'This is a ZIP download. Download the new ZIP and copy bot/, scripts/, requirements.txt and batch files into this folder. Preserve config.yaml, campaigns/, secrets.txt and data/. See README.'
 }
+# Files the installer itself rewrites (font licences, the secrets template) are restored, not treated as edits.
+cmd /c "git checkout -- fonts secrets.example.txt 2>nul"
 $dirtyFiles = & git status --porcelain --untracked-files=no
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect repository.' }
 if ($dirtyFiles) { throw 'You have edited tracked files, such as campaign configuration. Save/commit those changes before updating; update will not overwrite them.' }
@@ -31,6 +33,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Renderer update failed.' }
     & $pythonConsole -m bot.fonts
     if ($LASTEXITCODE -ne 0) { throw 'Font update failed.' }
+    cmd /c "git checkout -- fonts 2>nul"
+    & $pythonConsole -m bot.reset_today
+    if ($LASTEXITCODE -ne 0) { Write-Host 'Could not clear today''s session; send "hi" as usual.' }
 } finally {
     if ($wasRunning) {
         & $pythonConsole -m bot.launcher --start-only
