@@ -11,12 +11,14 @@ poll_seconds: 15
 summary_timezone: Australia/Sydney
 summary_time: '21:00'
 minimum_publish_gap_minutes: 30
+# Text AI: the first does the work, the second is the fallback.
+text_provider_order: [gemini, groq]
 groq:
   model: openai/gpt-oss-120b
   daily_text_limit: 100
 gemini:
   text_model: gemini-3.1-flash-lite
-  daily_text_limit: 50
+  daily_text_limit: 100
 images:
   provider: manual_telegram
   request_lead_minutes: 120

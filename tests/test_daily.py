@@ -282,3 +282,20 @@ async def test_clinic_prompt_forbids_disclaimer_in_artwork(app,monkeypatch):
     await app.daily.on_text({"message_id":1,"text":"hi"})
     prompt = app.telegram.document.await_args_list[0].args[0].read_text(encoding="utf-8")
     assert prompt.index("Do NOT add any disclaimer") < prompt.index("\nCAMPAIGN INPUT\n")
+
+
+async def test_gemini_first_groq_fallback(tmp_path):
+    from bot.generation import TextClient
+    from bot.models import ComplianceVerdict
+    settings,_,_ = load_config()
+    assert settings["text_provider_order"] == ["gemini","groq"]
+    store = Store(tmp_path/"order.sqlite3")
+    client = TextClient(None,settings,{"GROQ_API_KEY":"g","GEMINI_API_KEY":"m"},store)
+    client.ask_gemini = AsyncMock(return_value='{"passed": true}')
+    client.ask_groq = AsyncMock(return_value='{"passed": false}')
+    assert (await client.json("s","p",ComplianceVerdict)).passed is True
+    client.ask_groq.assert_not_called()
+    from bot.http import APIError
+    client.ask_gemini = AsyncMock(side_effect=APIError("Gemini","quota"))
+    assert (await client.json("s","p",ComplianceVerdict)).passed is False  # Groq answered as fallback
+    store.close()

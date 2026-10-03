@@ -40,15 +40,17 @@ class TextClient:
                              headers={"x-goog-api-key":self.secrets["GEMINI_API_KEY"]},
                              json={"systemInstruction":{"parts":[{"text":system}]},
                                    "contents":[{"parts":[{"text":prompt}]}],
-                                   "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":3500}})
+                                   "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":8192}})
         return "".join(p.get("text","") for p in data["candidates"][0]["content"]["parts"])
 
     async def json(self, system, prompt, schema):
         failures = []
         day = datetime.now(timezone.utc).date().isoformat()
         system = system + self.instructions(schema)
-        providers = [("Groq","GROQ_API_KEY","groq_text",self.settings["groq"]["daily_text_limit"],self.ask_groq),
-                     ("Gemini","GEMINI_API_KEY","gemini_text",self.settings["gemini"]["daily_text_limit"],self.ask_gemini)]
+        available = {"groq":("Groq","GROQ_API_KEY","groq_text",self.settings["groq"]["daily_text_limit"],self.ask_groq),
+                     "gemini":("Gemini","GEMINI_API_KEY","gemini_text",self.settings["gemini"]["daily_text_limit"],self.ask_gemini)}
+        # First provider does the work; the next is the fallback. Set in config.yaml.
+        providers = [available[name] for name in self.settings.get("text_provider_order",["gemini","groq"]) if name in available]
         for name,key,service,limit,ask in providers:
             if not self.secrets.get(key):
                 continue
