@@ -57,7 +57,8 @@ def filled_prompt(campaign, draft, references):
                   "WEBSITE / EMAIL": "NONE" if educational else copy.url or campaign.website or "NONE",
                   # Owner decision: no doctor attribution in artwork; the clinic logo is the only branding.
                   "DOCTOR ATTRIBUTION": "NONE",
-                  "EDUCATIONAL DISCLAIMER": campaign.required_footer_rules.get("disclaimer", "NONE") if educational else "NONE"}
+                  # Owner decision: the disclaimer goes in the caption, not the artwork.
+                  "EDUCATIONAL DISCLAIMER": "NONE"}
     original = campaign.brand_prompt
     marker = "\nCAMPAIGN INPUT\n"
     if marker not in original:

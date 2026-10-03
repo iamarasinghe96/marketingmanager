@@ -36,6 +36,7 @@ OPEN = ("awaiting_image", "awaiting_approval", "failed")
 GREETINGS = {"hi", "hii", "hiii", "hello", "hey", "start", "good morning", "morning"}
 ATTRIBUTION_MARKERS = ("explained by", "විස්තර කරන්නේ", "mbbs", "mrcpch", "mrcp (uk)")
 LINE = 'Reply "approve" to post, or tell me what to change.'
+LANGUAGES = {"en": "English", "si": "Sinhala", "ta": "Tamil"}
 
 
 class CaptionEdit(BaseModel):
@@ -52,15 +53,35 @@ def is_approval(text):
     return text.casefold().strip(" .!") in {"approve", "approved", "ok", "okay", "👍", "yes", "post it", "post"}
 
 
-def clean_caption(campaign, caption):
-    """Captions never carry the doctor attribution, and carry the disclaimer at most once."""
+def caption_language_ok(caption, language):
+    """Rough script check: Sinhala/Tamil captions use that script; English captions use neither."""
+    sinhala = len(re.findall(r"[\u0D80-\u0DFF]", caption))
+    tamil = len(re.findall(r"[\u0B80-\u0BFF]", caption))
+    latin = len(re.findall(r"[A-Za-z]", caption))
+    if language == "si":
+        return sinhala > max(tamil, latin * 0.3)
+    if language == "ta":
+        return tamil > max(sinhala, latin * 0.3)
+    return sinhala + tamil < max(5, latin * 0.1)
+
+
+def disclaimers(campaign):
+    found = dict(campaign.required_footer_rules.get("disclaimers") or {})
+    if campaign.required_footer_rules.get("disclaimer"):
+        found.setdefault("si", campaign.required_footer_rules["disclaimer"])
+    return found
+
+
+def clean_caption(campaign, caption, language=None, educational=False):
+    """No doctor attribution; exactly one disclaimer (in the post's language) on educational posts."""
     lines = [line for line in caption.splitlines()
              if not any(marker in line.casefold() for marker in ATTRIBUTION_MARKERS)]
     text = "\n".join(lines)
-    disclaimer = campaign.required_footer_rules.get("disclaimer", "")
-    if disclaimer and text.count(disclaimer) > 1:
-        first = text.index(disclaimer) + len(disclaimer)
-        text = text[:first] + text[first:].replace(disclaimer, "")
+    for disclaimer in disclaimers(campaign).values():
+        text = text.replace(disclaimer, "")
+    wanted = disclaimers(campaign).get(language or "", "") if educational else ""
+    if wanted:
+        text = text.rstrip() + "\n\n" + wanted
     text = re.sub(r"[ \t]+\n", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
@@ -287,12 +308,17 @@ class DailyFlow:
         self.unchecked = False
         correction, copy, reasons = "", None, []
         history = self.history(campaign, day)
-        context = {"format": "post", "caption_rules": "No doctor name, credentials or attribution in the caption."}
+        language = campaign.language_rules["rotation"][day.toordinal() % len(campaign.language_rules["rotation"])]
+        context = {"format": "post",
+                   "caption_rules": f"Write the caption in {LANGUAGES[language]}, the SAME language as the post's headline and text. "
+                                    "No doctor name, credentials or attribution. No disclaimer; it is added automatically."}
         for _ in range(3):
             copy = await self.text.write(campaign, day, history, idea, context, None, correction)
             if campaign.style == "clinic" and copy.url:
                 copy = copy.model_copy(update={"url": ""})
-            reasons = await check(campaign, copy, self.text)
+            reasons = list(await check(campaign, copy, self.text))
+            if not caption_language_ok(clean_caption(campaign, copy.caption), copy.language):
+                reasons.append(f"The caption must be written in {LANGUAGES[copy.language]}, the same language as the post")
             if not reasons:
                 return copy
             if reasons == [UNAVAILABLE]:
@@ -304,7 +330,7 @@ class DailyFlow:
         raise ValueError("The text could not pass the brand/medical checks: " + "; ".join(reasons))
 
     def caption(self, campaign, copy):
-        text = clean_caption(campaign, copy.caption)
+        text = clean_caption(campaign, copy.caption, copy.language, copy.category == "EDUCATIONAL")
         tags = " ".join(copy.hashtags[:campaign.hashtag_rules["max_count"]])
         return text + ("\n\n" + tags if tags else "")
 
@@ -380,9 +406,9 @@ class DailyFlow:
         copy = Copy.model_validate_json(session["copy"])
         system = (campaign.brand_prompt + "\n\nYou are editing ONE social media caption. Apply the owner's instruction exactly and change "
                   "nothing else. Keep the brand and medical rules above. Never include a doctor's name, credentials or "
-                  "'Explained by' attribution in the caption. Include the medical disclaimer at most once. Put hashtags only in "
-                  f"the hashtags list (max {campaign.hashtag_rules['max_count']}), never inside the caption text. Keep the caption's language "
-                  "unless asked to change it.")
+                  "'Explained by' attribution in the caption. Do not write any disclaimer; it is added automatically. "
+                  f"Write the caption in {LANGUAGES[copy.language]}, the same language as the post. Put hashtags only in "
+                  f"the hashtags list (max {campaign.hashtag_rules['max_count']}), never inside the caption text.")
         prompt = json.dumps({"current_caption": copy.caption, "current_hashtags": copy.hashtags, "post_headline": copy.headline,
                              "owner_instruction": instruction}, ensure_ascii=False)
         reasons = []
@@ -394,7 +420,9 @@ class DailyFlow:
             except (ValidationError, ValueError) as exc:
                 reasons = [str(exc)[:200]]
                 continue
-            reasons = await check(campaign, updated, self.text)
+            reasons = list(await check(campaign, updated, self.text))
+            if not caption_language_ok(updated.caption, copy.language):
+                reasons.append(f"The caption must stay in {LANGUAGES[copy.language]}, the same language as the post")
             if not reasons:
                 break
             prompt = json.dumps({"current_caption": copy.caption, "current_hashtags": copy.hashtags, "owner_instruction": instruction,

@@ -606,15 +606,8 @@ Do not allow the WhatsApp logo to overpower the clinic identity.
 EDUCATIONAL FOOTER
 ======================================================================
 
-When the CAMPAIGN INPUT supplies the educational disclaimer, reproduce it exactly in a small, quiet footer.
-
-Do NOT place any doctor attribution, name or credentials in the artwork. The clinic logo is the only branding.
-
-Current supplied Sinhala disclaimer:
-
-"මෙය පොදු සෞඛ්‍ය දැනුවත් කිරීමක් පමණි; වෛද්‍ය උපදෙසක් හෝ රෝග විනිශ්චයක් නොවේ. ඔබේ රෝග ලක්ෂණ සම්බන්ධයෙන් ලියාපදිංචි වෛද්‍යවරයෙකුගෙන් උපදෙස් ලබා ගන්න."
-
-Do not use this educational footer on an institutional advertisement.
+Do NOT place a disclaimer, footer text, doctor attribution, name or credentials in the artwork.
+The disclaimer is published in the caption instead. The clinic logo is the only branding.
 
 ======================================================================
 HASHTAGS

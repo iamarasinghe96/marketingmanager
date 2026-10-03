@@ -63,6 +63,11 @@ banned_phrases:
   - ஒவ்வாமை நிபுணர்
 required_footer_rules:
   educational: true
+  # Added to the caption (not the artwork) of educational posts, in the post's language.
+  disclaimers:
+    en: 'This is general health information only; it is not medical advice or a diagnosis. Please consult a registered doctor about your symptoms.'
+    si: 'මෙය පොදු සෞඛ්‍ය දැනුවත් කිරීමක් පමණි; වෛද්‍ය උපදෙසක් හෝ රෝග විනිශ්චයක් නොවේ. ඔබේ රෝග ලක්ෂණ සම්බන්ධයෙන් ලියාපදිංචි වෛද්‍යවරයෙකුගෙන් උපදෙස් ලබා ගන්න.'
+    ta: 'இது பொதுவான சுகாதார விழிப்புணர்வுத் தகவல் மட்டுமே; மருத்துவ ஆலோசனையோ நோயறிதலோ அல்ல. உங்கள் அறிகுறிகள் குறித்து பதிவுசெய்யப்பட்ட மருத்துவரை அணுகவும்.'
   disclaimer: 'මෙය පොදු සෞඛ්‍ය දැනුවත් කිරීමක් පමණි; වෛද්‍ය උපදෙසක් හෝ රෝග විනිශ්චයක් නොවේ. ඔබේ රෝග ලක්ෂණ සම්බන්ධයෙන් ලියාපදිංචි වෛද්‍යවරයෙකුගෙන් උපදෙස් ලබා ගන්න.'
   attribution: 'විස්තර කරන්නේ / Explained by: Dr. Ajith Amarasinghe — MBBS, DCH, MD (Paediatrics), MRCP (UK), MRCPCH (UK), MBA (Health Care)'
 # Add clinically checked factual sentences here before requesting medical claims.

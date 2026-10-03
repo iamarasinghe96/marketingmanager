@@ -73,6 +73,7 @@ async def test_hi_sends_only_active_campaign_prompt(app,monkeypatch):
     prompt = app.telegram.document.await_args_list[0].args[0].read_text(encoding="utf-8")
     assert "CAMPAIGN TYPE:\nEDUCATIONAL" in prompt and "ABSOLUTE MEDICAL COMMUNICATION RULES" in prompt
     assert "DOCTOR ATTRIBUTION:\nNONE" in prompt and "Ajith" not in prompt
+    assert "EDUCATIONAL DISCLAIMER:\nNONE" in prompt and "ලියාපදිංචි" not in prompt
     assert "logo exactly as supplied on EVERY post" in prompt
     session = app.daily.sessions(app.daily.today())[0]
     assert session["state"] == "awaiting_image"
@@ -99,7 +100,8 @@ async def test_image_edit_approve_publishes_post_and_story(app,monkeypatch,tmp_p
     app.text.json = AsyncMock(return_value=CaptionEdit(caption="Short and clear.\n"+ATTRIBUTION,hashtags=["#Asthma"]))
     await app.daily.on_text({"message_id":3,"text":"make it shorter"})
     session = app.daily.session(session["id"])
-    assert session["caption"] == "Short and clear.\n\n#Asthma"
+    english = app.campaigns["allergy-asthma-centre"].required_footer_rules["disclaimers"]["en"]
+    assert session["caption"] == "Short and clear.\n\n" + english + "\n\n#Asthma"
     await app.daily.on_text({"message_id":4,"text":"approve"})
     session = app.daily.session(session["id"])
     assert session["state"] == "published"
@@ -150,13 +152,37 @@ async def test_one_reminder_then_midnight_discard(app,monkeypatch,tmp_path):
     assert app.store.one("SELECT state FROM sessions")["state"] == "discarded"
 
 
-def test_clean_caption_removes_attribution_and_duplicate_disclaimer():
+def test_clean_caption_removes_attribution_and_puts_one_disclaimer_in_post_language():
     campaign = load_config()[1]["allergy-asthma-centre"]
-    disclaimer = campaign.required_footer_rules["disclaimer"]
-    text = "Topic text.\n\n"+ATTRIBUTION+"\n\n"+disclaimer+"\n\n"+disclaimer
-    cleaned = clean_caption(campaign,text)
-    assert "Explained by" not in cleaned and "MBBS" not in cleaned
-    assert cleaned.count(disclaimer) == 1 and cleaned.startswith("Topic text.")
+    si = campaign.required_footer_rules["disclaimers"]["si"]
+    en = campaign.required_footer_rules["disclaimers"]["en"]
+    text = "Topic text.\n\n"+ATTRIBUTION+"\n\n"+si+"\n\n"+si
+    cleaned = clean_caption(campaign,text,"en",educational=True)
+    assert "Explained by" not in cleaned and "MBBS" not in cleaned and si not in cleaned
+    assert cleaned.count(en) == 1 and cleaned.startswith("Topic text.")
+    assert si not in clean_caption(campaign,text)  # institutional/no flag: no disclaimer
+
+
+def test_caption_language_check():
+    from bot.daily import caption_language_ok
+    assert caption_language_ok("Understanding asthma triggers.","en")
+    assert not caption_language_ok("ඇදුම රෝගය පිළිබඳ දැනුවත් වීම.","en")
+    assert caption_language_ok("ඇදුම රෝගය පිළිබඳ දැනුවත් වීම. #Asthma","si")
+    assert not caption_language_ok("Understanding asthma triggers.","si")
+    assert caption_language_ok("ஆஸ்துமா பற்றிய விழிப்புணர்வு.","ta")
+
+
+async def test_wrong_language_caption_is_rewritten(app,monkeypatch):
+    aac = app.campaigns["allergy-asthma-centre"]
+    good = sample(aac,"si").model_copy(update={"caption":"ඇදුම රෝගය පිළිබඳ දැනුවත් වීම."})
+    bad = good.model_copy(update={"caption":"Understanding asthma."})
+    app.text.write = AsyncMock(side_effect=[bad,good])
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    assert app.text.write.await_count == 2
+    assert "Sinhala" in app.text.write.await_args_list[1].args[6]
+    session = app.daily.sessions(app.daily.today())[0]
+    assert session["caption"].endswith(aac.required_footer_rules["disclaimers"]["si"])
 
 
 def test_fit_pads_without_cropping(tmp_path):
