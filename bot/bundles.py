@@ -87,10 +87,8 @@ def filled_prompt(campaign, draft, references):
                      "Do NOT add any disclaimer, 'general health information' or 'not medical advice' note, other fine print, "
                      "doctor name or credentials anywhere in the artwork. The disclaimer is published in the caption.\n\n")
     if campaign.style == "clinic":
-        override += ("STYLE REFERENCE ATTACHED (style_reference.png): match its look and quality closely: white/off-white "
-                     "background, the logo top-left, a large two-tone serif/sans headline, a short grey subline, a few short "
-                     "points each with a small thin-line icon in a pale green circle, and ONE soft natural photograph on one side "
-                     "framed by a gentle curve. Use its calm green/teal palette. Do not copy its words.\n"
+        override += ("VARIETY: choose a fresh composition from the brand prompt's CREATIVE DIRECTION; do not fall back to one "
+                     "standard poster layout.\n"
                      "NO PEOPLE: no human faces, bodies, hands or silhouettes anywhere. Use nature, plants, flowers, pollen, "
                      "trees, sky, animals or everyday objects instead.\n"
                      "DESIGN RESTRAINT: calm and human-made, not an AI poster. No colourful or glossy icons, no icon grids, "

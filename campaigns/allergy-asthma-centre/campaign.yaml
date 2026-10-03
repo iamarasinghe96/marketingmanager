@@ -20,8 +20,8 @@ palette: {background: '#F7F7F2', primary: '#0B4257', accent: '#12CFD0', bright: 
 fonts: {headline: Montserrat, body: Inter, wordmark: Oswald, sinhala: Noto Sans Sinhala, tamil: Noto Sans Tamil}
 logo_path: assets/allergy-asthma-centre/logo.png
 premises_path: assets/allergy-asthma-centre/premises.webp
-# Sent with every prompt; ChatGPT matches its look.
-style_reference: assets/allergy-asthma-centre/style-reference.png
+# Optional: an image sent with every prompt for ChatGPT to imitate. Left empty so layouts stay varied.
+style_reference: ''
 # Right-hand pharmacy and laboratory signs are outside this crop (normalised x,y,w,h).
 premises_crop: [0.0, 0.0, 0.56, 1.0]
 screenshots: []

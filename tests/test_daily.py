@@ -272,9 +272,9 @@ async def test_premises_only_when_visual_is_the_building(app,monkeypatch):
     aac = app.campaigns["allergy-asthma-centre"]
     base = sample(aac,"en",category="INSTITUTIONAL")
     names = lambda copy: [name for _,name in app.daily.assets(aac,copy)]
-    assert names(base.model_copy(update={"visual_kind":"premises","visual_brief":"Woman using an inhaler outdoors"})) == ["logo.png","style_reference.png"]
-    assert names(base.model_copy(update={"visual_kind":"premises","visual_brief":"The clinic building photographed from the gate"})) == ["logo.png","style_reference.png","premises.jpg"]
-    assert names(sample(aac,"en")) == ["logo.png","style_reference.png"]
+    assert names(base.model_copy(update={"visual_kind":"premises","visual_brief":"Woman using an inhaler outdoors"})) == ["logo.png"]
+    assert names(base.model_copy(update={"visual_kind":"premises","visual_brief":"The clinic building photographed from the gate"})) == ["logo.png","premises.jpg"]
+    assert names(sample(aac,"en")) == ["logo.png"]
 
 
 async def test_clinic_prompt_forbids_disclaimer_in_artwork(app,monkeypatch):
@@ -337,7 +337,7 @@ async def test_clinic_prompt_has_contact_band_and_restraint(app,monkeypatch):
     prompt = app.telegram.document.await_args_list[0].args[0].read_text(encoding="utf-8")
     assert "PHONE:\n077 371 0528" in prompt and "ADDRESS:\n107 Vijaya Kumarathunga Mawatha, Colombo 5" in prompt
     assert "NO PEOPLE" in prompt and prompt.index("DESIGN RESTRAINT") < prompt.index("\nCAMPAIGN INPUT\n")
-    assert "style_reference.png" in app.telegram.document.await_args_list[0].kwargs["caption"]
+    assert "style_reference" not in app.telegram.document.await_args_list[0].kwargs["caption"] and "VARIETY" in prompt
 
 
 def test_hashtags_in_caption_are_moved_and_contact_allowed():
