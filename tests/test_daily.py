@@ -208,3 +208,25 @@ async def test_failed_prompt_label_and_retry(app,monkeypatch):
     app.text.write = AsyncMock(return_value=sample(app.campaigns["allergy-asthma-centre"],"en"))
     await app.daily.on_text({"message_id":3,"text":"retry"})
     assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"
+
+
+def test_parse_json_unwraps_nested_and_trims():
+    from bot.generation import parse_json
+    from bot.models import Copy
+    raw = '{"Copy": {"category":"EDUCATIONAL","language":"en","topic":"Asthma triggers","headline":"' + "x "*100 + '","caption":"Caption.","visual_brief":"Flat illustration","visual_kind":"illustration","extra":1}}'
+    copy = parse_json(raw,Copy)
+    assert copy.category == "EDUCATIONAL" and len(copy.headline) <= 160
+
+
+async def test_json_retries_with_validation_error(tmp_path):
+    from bot.generation import TextClient
+    from bot.models import ComplianceVerdict
+    settings,_,_ = load_config()
+    store = Store(tmp_path/"q.sqlite3")
+    client = TextClient(None,settings,{"GROQ_API_KEY":"k"},store)
+    client.ask_groq = AsyncMock(side_effect=['{"verdict": "ok"}','{"passed": true, "reasons": []}'])
+    assert (await client.json("sys","prompt",ComplianceVerdict)).passed is True  # wrong keys -> retried
+    client.ask_groq = AsyncMock(side_effect=['{"passed": "maybe"}','{"passed": true}'])
+    assert (await client.json("sys","prompt",ComplianceVerdict)).passed is True
+    assert "rejected" in client.ask_groq.await_args_list[1].args[1]
+    store.close()

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 from bot.http import request, APIError
+from pydantic import ValidationError
 from bot.models import Copy, ComplianceVerdict, ReferenceGuidance
 
 log = logging.getLogger(__name__)
@@ -19,41 +20,56 @@ class TextClient:
     def __init__(self, client, settings, secrets, store):
         self.client, self.settings, self.secrets, self.store = client, settings, secrets, store
 
+    def instructions(self, schema):
+        return ("\nReturn ONE JSON object holding the actual values (not the schema, and not wrapped in another key). "
+                "Use exactly these keys: " + json.dumps(field_guide(schema), ensure_ascii=False))
+
+    async def ask_groq(self, system, prompt):
+        data = await request(self.client,"Groq","POST","https://api.groq.com/openai/v1/chat/completions",safe_retry=True,
+                             headers={"Authorization":"Bearer " + self.secrets["GROQ_API_KEY"]},
+                             json={"model":self.settings["groq"]["model"],"temperature":0.55,"max_tokens":6000,
+                                   "response_format":{"type":"json_object"},
+                                   # gpt-oss models think before answering; keep that short so the JSON fits.
+                                   **({"reasoning_effort":"low"} if "gpt-oss" in self.settings["groq"]["model"] else {}),
+                                   "messages":[{"role":"system","content":system},{"role":"user","content":prompt}]})
+        return data["choices"][0]["message"]["content"]
+
+    async def ask_gemini(self, system, prompt):
+        model = self.settings["gemini"]["text_model"]
+        data = await request(self.client,"Gemini","POST",f"{GEMINI}/models/{model}:generateContent",safe_retry=True,
+                             headers={"x-goog-api-key":self.secrets["GEMINI_API_KEY"]},
+                             json={"systemInstruction":{"parts":[{"text":system}]},
+                                   "contents":[{"parts":[{"text":prompt}]}],
+                                   "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":3500}})
+        return "".join(p.get("text","") for p in data["candidates"][0]["content"]["parts"])
+
     async def json(self, system, prompt, schema):
         failures = []
         day = datetime.now(timezone.utc).date().isoformat()
-        if self.secrets.get("GROQ_API_KEY"):
-            try:
-                if not self.store.quota(day,"groq_text",self.settings["groq"]["daily_text_limit"]):
-                    raise APIError("Groq","Local daily text budget exhausted")
-                data = await request(self.client,"Groq","POST","https://api.groq.com/openai/v1/chat/completions",safe_retry=True,
-                                     headers={"Authorization":"Bearer " + self.secrets["GROQ_API_KEY"]},
-                                     json={"model":self.settings["groq"]["model"],"temperature":0.55,"max_tokens":6000,
-                                           "response_format":{"type":"json_object"},
-                                           # gpt-oss models think before answering; keep that short so the JSON fits.
-                                           **({"reasoning_effort":"low"} if "gpt-oss" in self.settings["groq"]["model"] else {}),
-                                           "messages":[{"role":"system","content":system + "\nReturn strict JSON only. Schema: " + json.dumps(schema.model_json_schema())},
-                                                       {"role":"user","content":prompt}]})
-                return parse_json(data["choices"][0]["message"]["content"],schema)
-            except (APIError, ValueError, KeyError, IndexError, TypeError) as exc:
-                log.warning("Groq JSON failed: %s",str(exc)[:500])
-                failures.append("Groq: " + str(exc)[:160])
-        if self.secrets.get("GEMINI_API_KEY"):
-            try:
-                if not self.store.quota(day,"gemini_text",self.settings["gemini"]["daily_text_limit"]):
-                    raise APIError("Gemini text","Local daily text budget exhausted")
-                model = self.settings["gemini"]["text_model"]
-                data = await request(self.client,"Gemini","POST",f"{GEMINI}/models/{model}:generateContent",safe_retry=True,
-                                     headers={"x-goog-api-key":self.secrets["GEMINI_API_KEY"]},
-                                     json={"systemInstruction":{"parts":[{"text":system}]},
-                                           "contents":[{"parts":[{"text":prompt + "\nJSON schema: " + json.dumps(schema.model_json_schema())}]}],
-                                           "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":3500}})
-                content = "".join(p.get("text","") for p in data["candidates"][0]["content"]["parts"])
-                return parse_json(content,schema)
-            except (APIError, ValueError, KeyError, IndexError, TypeError) as exc:
-                log.warning("Gemini JSON failed: %s",str(exc)[:500])
-                failures.append("Gemini: " + str(exc)[:160])
-        raise APIError("Text generation","Both text providers failed or returned invalid JSON. Check keys, configured models and free quota. " + ", ".join(failures))
+        system = system + self.instructions(schema)
+        providers = [("Groq","GROQ_API_KEY","groq_text",self.settings["groq"]["daily_text_limit"],self.ask_groq),
+                     ("Gemini","GEMINI_API_KEY","gemini_text",self.settings["gemini"]["daily_text_limit"],self.ask_gemini)]
+        for name,key,service,limit,ask in providers:
+            if not self.secrets.get(key):
+                continue
+            request_text = prompt
+            for attempt in range(2):
+                try:
+                    if not self.store.quota(day,service,limit):
+                        raise APIError(name,"Local daily text budget exhausted")
+                    content = await ask(system,request_text)
+                    return parse_json(content,schema)
+                except ValidationError as exc:
+                    log.warning("%s JSON invalid: %s",name,str(exc)[:500])
+                    failures.append(f"{name}: " + str(exc).splitlines()[0][:120])
+                    # Show the model exactly what was wrong and let it correct itself once.
+                    request_text = prompt + "\n\nYour previous answer was rejected: " + str(exc)[:800] + "\nFix those fields and return the full JSON object again."
+                except (APIError, ValueError, KeyError, IndexError, TypeError) as exc:
+                    log.warning("%s JSON failed: %s",name,str(exc)[:500])
+                    failures.append(f"{name}: " + str(exc)[:160])
+                    if isinstance(exc, APIError):
+                        break
+        raise APIError("Text generation","Both text providers failed or returned invalid JSON. " + "; ".join(failures)[:600])
 
     async def write(self, campaign, day, history, idea="", revision=None, previous=None, correction=""):
         choices = list(campaign.content_mix)
@@ -122,18 +138,54 @@ class TextClient:
         return await self.json(system,json.dumps({"draft":copy.model_dump(exclude={"changes"}),"approved_facts":campaign.approved_facts},ensure_ascii=False),ComplianceVerdict)
 
 
+def field_guide(schema):
+    guide = {}
+    for name, field in schema.model_fields.items():
+        hint = str(field.annotation).replace("typing.", "")
+        limit = next((getattr(m, "max_length", None) for m in field.metadata if getattr(m, "max_length", None)), None)
+        guide[name] = hint + (f" (max {limit})" if limit else "") + ("" if field.is_required() else " (optional)")
+    return guide
+
+
+def find_object(data, fields):
+    """Return the dict that carries the schema's keys, even if the model nested it."""
+    if isinstance(data, dict):
+        if fields & set(data):
+            return data
+        for value in data.values():
+            found = find_object(value, fields)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for value in data:
+            found = find_object(value, fields)
+            if found is not None:
+                return found
+    return None
+
+
 def parse_json(content, schema):
-    """Accept fenced or chatty JSON and ignore extra keys the model adds."""
+    """Accept fenced, chatty or nested JSON, ignore extra keys and trim over-long text."""
     import re
     content = (content or "").strip()
     match = re.search(r"\{.*\}", content, re.S)
     if not match:
         raise ValueError("The model returned no JSON")
-    data = json.loads(match.group(0))
-    if not isinstance(data, dict):
-        raise ValueError("The model returned JSON that is not an object")
     fields = set(schema.model_fields)
-    return schema.model_validate({key: value for key, value in data.items() if key in fields})
+    data = find_object(json.loads(match.group(0)), fields)
+    if data is None:
+        raise ValueError("The model's JSON did not contain the expected keys")
+    clean = {}
+    for key, value in data.items():
+        if key not in fields:
+            continue
+        limit = next((getattr(m, "max_length", None) for m in schema.model_fields[key].metadata if getattr(m, "max_length", None)), None)
+        if limit and isinstance(value, str) and len(value) > limit:
+            value = value[:limit].rsplit(" ", 1)[0].rstrip(" ,;:")
+        elif limit and isinstance(value, list) and len(value) > limit:
+            value = value[:limit]
+        clean[key] = value
+    return schema.model_validate(clean)
 
 
 async def rss_news(client, queries):
