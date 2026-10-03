@@ -28,13 +28,16 @@ class TextClient:
                     raise APIError("Groq","Local daily text budget exhausted")
                 data = await request(self.client,"Groq","POST","https://api.groq.com/openai/v1/chat/completions",safe_retry=True,
                                      headers={"Authorization":"Bearer " + self.secrets["GROQ_API_KEY"]},
-                                     json={"model":self.settings["groq"]["model"],"temperature":0.55,"max_tokens":2200,
+                                     json={"model":self.settings["groq"]["model"],"temperature":0.55,"max_tokens":6000,
                                            "response_format":{"type":"json_object"},
+                                           # gpt-oss models think before answering; keep that short so the JSON fits.
+                                           **({"reasoning_effort":"low"} if "gpt-oss" in self.settings["groq"]["model"] else {}),
                                            "messages":[{"role":"system","content":system + "\nReturn strict JSON only. Schema: " + json.dumps(schema.model_json_schema())},
                                                        {"role":"user","content":prompt}]})
-                return schema.model_validate_json(data["choices"][0]["message"]["content"])
-            except (APIError, ValueError, KeyError, IndexError) as exc:
-                failures.append(type(exc).__name__)
+                return parse_json(data["choices"][0]["message"]["content"],schema)
+            except (APIError, ValueError, KeyError, IndexError, TypeError) as exc:
+                log.warning("Groq JSON failed: %s",str(exc)[:500])
+                failures.append("Groq: " + str(exc)[:160])
         if self.secrets.get("GEMINI_API_KEY"):
             try:
                 if not self.store.quota(day,"gemini_text",self.settings["gemini"]["daily_text_limit"]):
@@ -46,9 +49,10 @@ class TextClient:
                                            "contents":[{"parts":[{"text":prompt + "\nJSON schema: " + json.dumps(schema.model_json_schema())}]}],
                                            "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":3500}})
                 content = "".join(p.get("text","") for p in data["candidates"][0]["content"]["parts"])
-                return schema.model_validate_json(content)
-            except (APIError, ValueError, KeyError, IndexError) as exc:
-                failures.append(type(exc).__name__)
+                return parse_json(content,schema)
+            except (APIError, ValueError, KeyError, IndexError, TypeError) as exc:
+                log.warning("Gemini JSON failed: %s",str(exc)[:500])
+                failures.append("Gemini: " + str(exc)[:160])
         raise APIError("Text generation","Both text providers failed or returned invalid JSON. Check keys, configured models and free quota. " + ", ".join(failures))
 
     async def write(self, campaign, day, history, idea="", revision=None, previous=None, correction=""):
@@ -116,6 +120,20 @@ class TextClient:
         system += "A neutral topic heading is not a clinical claim. Any clinical claim needs explicit supplied evidence; news headlines are not evidence. "
         system += "Exact attribution/disclaimer is added by the renderer for educational only. Do not require it in the copy JSON.\n" + campaign.brand_prompt
         return await self.json(system,json.dumps({"draft":copy.model_dump(exclude={"changes"}),"approved_facts":campaign.approved_facts},ensure_ascii=False),ComplianceVerdict)
+
+
+def parse_json(content, schema):
+    """Accept fenced or chatty JSON and ignore extra keys the model adds."""
+    import re
+    content = (content or "").strip()
+    match = re.search(r"\{.*\}", content, re.S)
+    if not match:
+        raise ValueError("The model returned no JSON")
+    data = json.loads(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("The model returned JSON that is not an object")
+    fields = set(schema.model_fields)
+    return schema.model_validate({key: value for key, value in data.items() if key in fields})
 
 
 async def rss_news(client, queries):

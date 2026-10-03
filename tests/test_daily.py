@@ -181,3 +181,30 @@ async def test_default_greeting_is_canberra_time(tmp_path,monkeypatch):
     await app.daily.tick()
     assert app.telegram.send.await_count == 1
     store.close()
+
+
+def test_parse_json_accepts_fences_and_extra_keys():
+    from bot.generation import parse_json
+    from bot.models import ComplianceVerdict
+    verdict = parse_json('```json\n{"passed": true, "reasons": [], "notes": "extra"}\n```',ComplianceVerdict)
+    assert verdict.passed is True
+
+
+async def test_prompt_still_sent_when_ai_check_is_down(app,monkeypatch):
+    from bot.compliance import UNAVAILABLE
+    monkeypatch.setattr("bot.daily.check",AsyncMock(return_value=[UNAVAILABLE]))
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"
+    assert "review the wording carefully" in app.telegram.document.await_args_list[0].kwargs["caption"]
+
+
+async def test_failed_prompt_label_and_retry(app,monkeypatch):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    app.text.write = AsyncMock(side_effect=ValueError("provider down"))
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    await app.daily.on_text({"message_id":2,"text":"hi"})
+    assert 'prompt failed, reply "retry"' in app.telegram.send.await_args.args[0]
+    app.text.write = AsyncMock(return_value=sample(app.campaigns["allergy-asthma-centre"],"en"))
+    await app.daily.on_text({"message_id":3,"text":"retry"})
+    assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"

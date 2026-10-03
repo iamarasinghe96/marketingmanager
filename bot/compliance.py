@@ -2,6 +2,8 @@ import re
 import unicodedata
 from bot.models import Copy
 
+UNAVAILABLE = "Medical compliance service unavailable. Revise/retry before approval."
+
 
 def normalise(text):
     text = unicodedata.normalize("NFKC",text).casefold()
@@ -70,6 +72,8 @@ async def check(campaign, copy, text_client):
             verdict = await text_client.compliance(campaign,copy)
             if not verdict.passed:
                 reasons.extend(verdict.reasons or ["LLM medical compliance check did not pass"])
-        except Exception:
-            reasons.append("Medical compliance service unavailable. Revise/retry before approval.")
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Compliance check unavailable: %s",str(exc)[:500])
+            reasons.append(UNAVAILABLE)
     return list(dict.fromkeys(reasons))

@@ -16,7 +16,7 @@ from PIL import Image, ImageOps
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from bot.bundles import filled_prompt
-from bot.compliance import check, banned_matches
+from bot.compliance import check, banned_matches, UNAVAILABLE
 from bot.config import ROOT
 from bot.db import stamp, utcnow
 from bot.models import Copy
@@ -74,6 +74,16 @@ def fit(source, size, background):
         canvas = Image.new("RGB", size, background)
         canvas.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
         return canvas
+
+
+def waiting_for(session):
+    if session["state"] == "awaiting_image":
+        return "image"
+    if session["state"] == "awaiting_approval":
+        return "approval"
+    if not session["copy"]:
+        return 'prompt failed, reply "retry"'
+    return 'publishing failed, reply "approve" to retry'
 
 
 class DailyFlow:
@@ -246,7 +256,7 @@ class DailyFlow:
                 await self.telegram.send("Today's posts are already done ✅")
             else:
                 await self.telegram.send("Already started today. Waiting for: " + ", ".join(
-                    f"{self.campaigns[s['campaign']].name} ({'image' if s['state'] == 'awaiting_image' else 'approval'})" for s in unfinished))
+                    f"{self.campaigns[s['campaign']].name} ({waiting_for(s)})" for s in unfinished))
             return
         campaigns = self.active(day)
         if not campaigns:
@@ -274,6 +284,7 @@ class DailyFlow:
                 await self.telegram.send(f"{campaign.name}: couldn't write today's prompt ({str(exc)[:300]}). Reply \"retry\" to try again.")
 
     async def write(self, campaign, day, idea=""):
+        self.unchecked = False
         correction, copy, reasons = "", None, []
         history = self.history(campaign, day)
         context = {"format": "post", "caption_rules": "No doctor name, credentials or attribution in the caption."}
@@ -283,6 +294,11 @@ class DailyFlow:
                 copy = copy.model_copy(update={"url": ""})
             reasons = await check(campaign, copy, self.text)
             if not reasons:
+                return copy
+            if reasons == [UNAVAILABLE]:
+                # The AI check could not run (provider error), but the fixed banned-phrase and
+                # category rules passed. Continue and ask the owner to review carefully.
+                self.unchecked = True
                 return copy
             correction = "Correct these failures: " + "; ".join(reasons)
         raise ValueError("The text could not pass the brand/medical checks: " + "; ".join(reasons))
@@ -314,7 +330,8 @@ class DailyFlow:
         assets = self.assets(campaign, copy)
         attach = ("Attach: " + ", ".join(name for _, name in assets) + ".") if assets else "No attachments needed."
         label = {"MARKETING": "", "EDUCATIONAL": " (educational)", "INSTITUTIONAL": " (institutional)"}[copy.category]
-        message = await self.telegram.document(prompt, caption=f"{campaign.name}{label} – today's prompt. {attach} Send me the finished image when ready.")
+        note = " ⚠ The AI medical check couldn't run today, so please review the wording carefully." if getattr(self, "unchecked", False) else ""
+        message = await self.telegram.document(prompt, caption=f"{campaign.name}{label} – today's prompt. {attach} Send me the finished image when ready.{note}")
         self.remember(message, session)
         for source, name in assets:
             target = folder / name
