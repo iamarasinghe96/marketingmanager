@@ -90,7 +90,10 @@ class TextClient:
         if campaign.style == "clinic":
             system += "Classify first. For education, medical claims MUST be supported by approved_facts; if empty, use neutral awareness headings and no clinical claims. "
             system += "Institutional posts use only the exact supplied contact details, with no doctor, credentials, portrait or title. "
-            system += "Use EDUCATIONAL for awareness/news and INSTITUTIONAL for location/contact. Educational CTA must be empty. "
+            system += ("Use EDUCATIONAL for anything that explains a condition, symptoms, triggers, prevention or management, and for news. "
+                       "Use INSTITUTIONAL only for posts about the clinic itself (location, contact, opening, services); those contain no health education. "
+                       "visual_kind 'premises' is only for INSTITUTIONAL posts whose visual is the clinic building. Educational CTA must be empty. "
+                       "Never put a disclaimer or 'not medical advice' note in any field; the disclaimer is added to the caption automatically. ")
         else:
             system += "Use category MARKETING, Australian English, no em dashes, headline ending with a full stop. "
         context = {"date":day.isoformat(),"language":language,"angle":angle,"idea":idea,

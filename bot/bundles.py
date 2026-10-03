@@ -80,6 +80,10 @@ def filled_prompt(campaign, draft, references):
     override = (f"OUTPUT FORMAT FOR THIS REQUEST: one finished {width} × {height} {draft['kind']} ({ratio}). "
                 "This size overrides generic post sizes elsewhere in the unchanged brand prompt. "
                 "Use only the filled CAMPAIGN INPUT text and attached permitted assets. No watermarks.\n\n")
+    if campaign.style == "clinic":
+        override += ("IMPORTANT: Place the attached clinic logo on the design. Do NOT add any disclaimer, "
+                     "'general health information' or 'not medical advice' note, fine print, footer text, doctor name or "
+                     "credentials anywhere in the artwork. The disclaimer is published in the caption.\n\n")
     return override + brand
 
 

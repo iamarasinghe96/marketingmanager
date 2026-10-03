@@ -266,3 +266,19 @@ def test_hashtags_are_repaired_not_rejected():
     copy = sample(load_config()[1]["allergy-asthma-centre"],"en").model_copy()
     fixed = Copy.model_validate({**copy.model_dump(),"hashtags":["AsthmaAwareness","#Allergy Care","Sri-Lanka","#AsthmaAwareness","ඇදුම‍රෝගය",""]})
     assert fixed.hashtags == ["#AsthmaAwareness","#AllergyCare","#SriLanka"]
+
+
+async def test_premises_only_when_visual_is_the_building(app,monkeypatch):
+    aac = app.campaigns["allergy-asthma-centre"]
+    base = sample(aac,"en",category="INSTITUTIONAL")
+    names = lambda copy: [name for _,name in app.daily.assets(aac,copy)]
+    assert names(base.model_copy(update={"visual_kind":"premises","visual_brief":"Woman using an inhaler outdoors"})) == ["logo.png"]
+    assert names(base.model_copy(update={"visual_kind":"premises","visual_brief":"The clinic building photographed from the gate"})) == ["logo.png","premises.jpg"]
+    assert names(sample(aac,"en")) == ["logo.png"]
+
+
+async def test_clinic_prompt_forbids_disclaimer_in_artwork(app,monkeypatch):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    prompt = app.telegram.document.await_args_list[0].args[0].read_text(encoding="utf-8")
+    assert prompt.index("Do NOT add any disclaimer") < prompt.index("\nCAMPAIGN INPUT\n")
