@@ -54,6 +54,7 @@ def app(tmp_path,monkeypatch):
 def clock(monkeypatch,now):
     monkeypatch.setattr("bot.app.utcnow",lambda:now)
     monkeypatch.setattr("bot.pipeline.utcnow",lambda:now)
+    monkeypatch.setattr("bot.content.utcnow",lambda:now)
 
 
 async def test_request_two_hours_before_and_remind_once(app,monkeypatch):

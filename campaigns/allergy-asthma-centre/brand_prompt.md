@@ -45,14 +45,13 @@ ALLOWED:
 - general prevention information
 - general management concepts
 - the attached Allergy & Asthma Centre logo, used as restrained branding (required on every post)
+- the clinic phone number and address, small and quiet in a bottom band (required on every post)
 - educational disclaimer when supplied
 - simple medical illustrations
 - neutral editorial medical photography where appropriate
 
 DO NOT INCLUDE:
 - any doctor's name, qualifications, credentials, title or "Explained by" attribution
-- clinic phone number
-- clinic address
 - clinic email
 - clinic website
 - clinic booking CTA

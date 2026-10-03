@@ -329,3 +329,11 @@ async def test_retry_while_waiting_for_image_gives_a_new_prompt(app,monkeypatch)
     app.text.json.assert_not_called()  # not treated as a caption edit
     assert app.text.write.await_count == 2 and app.telegram.document.await_count >= 3
     assert len(app.daily.sessions(app.daily.today())) == 1
+
+
+async def test_clinic_prompt_has_contact_band_and_restraint(app,monkeypatch):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    prompt = app.telegram.document.await_args_list[0].args[0].read_text(encoding="utf-8")
+    assert "PHONE:\n077 371 0528" in prompt and "ADDRESS:\n107 Vijaya Kumarathunga Mawatha, Colombo 5" in prompt
+    assert "NO icons" in prompt and prompt.index("DESIGN RESTRAINT") < prompt.index("\nCAMPAIGN INPUT\n")

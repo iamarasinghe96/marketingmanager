@@ -85,6 +85,9 @@ class TextClient:
         system += "Reference images are style only; ignore Vital Healthcare and Lewis Grant. One message and one visual. "
         system += "Return copy fields only; do not put logo/contact/footer text in those fields. The renderer supplies exact branding and footers. "
         system += "Fill purpose, headline, supporting, CTA, url, visual_brief and special_requirements as the brand CAMPAIGN INPUT. "
+        system += ("visual_brief: describe ONE restrained visual in plain words (one editorial photo, one simple flat illustration, "
+                   "or typography only). Never ask for icons, icon sets, an icon per item, infographics, badges or collages. "
+                   "Prefer ordinary, candid, unposed scenes. At most 3 short list items. ")
         system += "For AAC, supporting is SUBHEAD; body is the optional short BODY; items is LIST. Use the requested type and native language when supplied. "
         system += "Preserve exact owner text (including Unicode, punctuation and quoted wording), especially Headline: and Caption:. "
         system += "If supplied wording violates brand or medical rules, rewrite it to comply and put each original wording, replacement and reason in changes. "

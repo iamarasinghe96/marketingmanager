@@ -184,7 +184,7 @@ async def test_aac_cure_rewrite_explained_and_category_assets_separated(app,tmp_
     block=prompt.split('\nCAMPAIGN INPUT\n')[1].split('\nFINAL STANDARD\n')[0]
     assert 'CAMPAIGN TYPE:\nEDUCATIONAL' in block
     assert 'LANGUAGE:\nENGLISH' in block
-    assert 'PHONE:\nNONE' in block and 'CTA:\nNONE' in block
+    assert 'PHONE:\n077 371 0528' in block and 'CTA:\nNONE' in block  # owner rule: contact on every clinic post
     assert 'DOCTOR ATTRIBUTION:\nNONE' in block and 'Ajith' not in block
     assert 'Permanent cure' not in block
     institutional=sample(app.campaigns['allergy-asthma-centre'],category='INSTITUTIONAL')

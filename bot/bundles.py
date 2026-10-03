@@ -52,8 +52,9 @@ def filled_prompt(campaign, draft, references):
         values = {**common, "CAMPAIGN TYPE": copy.category, "FORMAT": f"{width} × {height} {draft['kind'].upper()}",
                   "LANGUAGE": {"en": "ENGLISH", "si": "SINHALA", "ta": "TAMIL"}[copy.language],
                   "SUBHEAD": copy.supporting or "NONE", "BODY": copy.body or "NONE", "LIST": "\n".join(copy.items) or "NONE",
-                  "PHONE": "NONE" if educational else campaign.phone or "NONE",
-                  "ADDRESS": "NONE" if educational else campaign.address or "NONE",
+                  # Owner decision: phone and address in the bottom band of every clinic post.
+                  "PHONE": campaign.phone or "NONE",
+                  "ADDRESS": campaign.address or "NONE",
                   "WEBSITE / EMAIL": "NONE" if educational else copy.url or campaign.website or "NONE",
                   # Owner decision: no doctor attribution in artwork; the clinic logo is the only branding.
                   "DOCTOR ATTRIBUTION": "NONE",
@@ -81,9 +82,15 @@ def filled_prompt(campaign, draft, references):
                 "This size overrides generic post sizes elsewhere in the unchanged brand prompt. "
                 "Use only the filled CAMPAIGN INPUT text and attached permitted assets. No watermarks.\n\n")
     if campaign.style == "clinic":
-        override += ("IMPORTANT: Place the attached clinic logo on the design. Do NOT add any disclaimer, "
-                     "'general health information' or 'not medical advice' note, fine print, footer text, doctor name or "
-                     "credentials anywhere in the artwork. The disclaimer is published in the caption.\n\n")
+        override += ("IMPORTANT: Place the attached clinic logo on the design. Put the clinic phone number and address "
+                     f"({campaign.phone} · {campaign.address}) small and quiet in a simple bottom band, exactly as written. "
+                     "Do NOT add any disclaimer, 'general health information' or 'not medical advice' note, other fine print, "
+                     "doctor name or credentials anywhere in the artwork. The disclaimer is published in the caption.\n\n")
+    override += ("DESIGN RESTRAINT (most important): this must look like a calm, human-made Canva/Figma post, not an AI poster. "
+                 "One headline, one short line, at most 3 short list items as plain text, and ONE visual. "
+                 "NO icons, NO icon circles or coloured badges, NO icon grid, NO infographic, NO sparkles, NO glossy effects, "
+                 "NO stock-photo person smiling at the sky. Do not add list items, labels or text beyond the CAMPAIGN INPUT. "
+                 "Generous empty space; when unsure, remove elements.\n\n")
     return override + brand
 
 
