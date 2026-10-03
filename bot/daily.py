@@ -351,6 +351,8 @@ class DailyFlow:
             if shots:
                 chosen = shots[min(copy.screenshot_index, len(shots) - 1)]
                 files.append((chosen, "screenshot" + chosen.suffix))
+        if campaign.style_reference:
+            files.append((campaign.asset(campaign.style_reference), "style_reference.png"))
         uses_building = copy.visual_kind == "premises" and re.search(r"premises|building|clinic (?:exterior|entrance|front)|facade|façade", copy.visual_brief, re.I)
         if campaign.style == "clinic" and copy.category == "INSTITUTIONAL" and uses_building and campaign.premises_path:
             files.append((campaign.asset(campaign.premises_path), "premises.jpg"))

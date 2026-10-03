@@ -37,6 +37,7 @@ class Campaign(BaseModel):
     fonts: dict[str, str]
     logo_path: str
     premises_path: str = ""
+    style_reference: str = ""
     premises_crop: tuple[float, float, float, float] = (0, 0, 0.56, 1)
     screenshots: list[str] = Field(default_factory=list)
     reference_posts: list[str] = Field(default_factory=list)

@@ -86,11 +86,21 @@ def filled_prompt(campaign, draft, references):
                      f"({campaign.phone} · {campaign.address}) small and quiet in a simple bottom band, exactly as written. "
                      "Do NOT add any disclaimer, 'general health information' or 'not medical advice' note, other fine print, "
                      "doctor name or credentials anywhere in the artwork. The disclaimer is published in the caption.\n\n")
-    override += ("DESIGN RESTRAINT (most important): this must look like a calm, human-made Canva/Figma post, not an AI poster. "
-                 "One headline, one short line, at most 3 short list items as plain text, and ONE visual. "
-                 "NO icons, NO icon circles or coloured badges, NO icon grid, NO infographic, NO sparkles, NO glossy effects, "
-                 "NO stock-photo person smiling at the sky. Do not add list items, labels or text beyond the CAMPAIGN INPUT. "
-                 "Generous empty space; when unsure, remove elements.\n\n")
+    if campaign.style == "clinic":
+        override += ("STYLE REFERENCE ATTACHED (style_reference.png): match its look and quality closely: white/off-white "
+                     "background, the logo top-left, a large two-tone serif/sans headline, a short grey subline, a few short "
+                     "points each with a small thin-line icon in a pale green circle, and ONE soft natural photograph on one side "
+                     "framed by a gentle curve. Use its calm green/teal palette. Do not copy its words.\n"
+                     "NO PEOPLE: no human faces, bodies, hands or silhouettes anywhere. Use nature, plants, flowers, pollen, "
+                     "trees, sky, animals or everyday objects instead.\n"
+                     "DESIGN RESTRAINT: calm and human-made, not an AI poster. No colourful or glossy icons, no icon grids, "
+                     "no infographic, no sparkles, no extra labels or text beyond the CAMPAIGN INPUT. Generous empty space.\n\n")
+    else:
+        override += ("DESIGN RESTRAINT (most important): this must look like a calm, human-made Canva/Figma post, not an AI poster. "
+                     "One headline, one short line, at most 3 short list items as plain text, and ONE visual. "
+                     "NO icons, NO icon circles or coloured badges, NO icon grid, NO infographic, NO sparkles, NO glossy effects, "
+                     "NO stock-photo person smiling at the sky. Do not add list items, labels or text beyond the CAMPAIGN INPUT. "
+                     "Generous empty space; when unsure, remove elements.\n\n")
     return override + brand
 
 
