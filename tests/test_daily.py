@@ -230,3 +230,10 @@ async def test_json_retries_with_validation_error(tmp_path):
     assert (await client.json("sys","prompt",ComplianceVerdict)).passed is True
     assert "rejected" in client.ask_groq.await_args_list[1].args[1]
     store.close()
+
+
+def test_hashtags_are_repaired_not_rejected():
+    from bot.models import Copy
+    copy = sample(load_config()[1]["allergy-asthma-centre"],"en").model_copy()
+    fixed = Copy.model_validate({**copy.model_dump(),"hashtags":["AsthmaAwareness","#Allergy Care","Sri-Lanka","#AsthmaAwareness","ඇදුම‍රෝගය",""]})
+    assert fixed.hashtags == ["#AsthmaAwareness","#AllergyCare","#SriLanka"]

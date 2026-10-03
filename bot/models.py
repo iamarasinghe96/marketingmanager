@@ -29,13 +29,25 @@ class Copy(BaseModel):
             raise ValueError("List items must be short")
         return value
 
-    @field_validator("hashtags")
+    @field_validator("hashtags", mode="before")
     @classmethod
     def valid_tags(cls, value):
+        """Repair what models usually get wrong (missing #, spaces, punctuation).
+
+        Tags that need invisible joiners (common in Sinhala) are dropped: they break across platforms.
+        """
         import re
-        if any(not re.fullmatch(r"#[\w]+", x, re.UNICODE) for x in value):
-            raise ValueError("Hashtags need # and letters/numbers only, no joiners")
-        return list(dict.fromkeys(value))
+        if isinstance(value, str):
+            value = re.split(r"[\s,]+", value)
+        tags = []
+        for tag in value or []:
+            tag = str(tag).strip()
+            if not tag or re.search(r"[\u200c\u200d]", tag):
+                continue
+            tag = "#" + re.sub(r"[^\w]", "", tag.lstrip("#"), flags=re.UNICODE)
+            if re.fullmatch(r"#\w+", tag, re.UNICODE):
+                tags.append(tag)
+        return list(dict.fromkeys(tags))
 
     @property
     def full_caption(self):
