@@ -61,12 +61,14 @@ class InstanceLock:
         folder = ROOT/"data"
         folder.mkdir(exist_ok=True)
         self.handle = (folder/"bot.lock").open("a+b")
-        self.handle.seek(0)
-        if self.handle.read(1) == b"":
-            self.handle.write(b"0")
-            self.handle.flush()
-        self.handle.seek(0)
         try:
+            # On Windows, reading a byte locked by the running bot raises
+            # PermissionError, which also means "already running".
+            self.handle.seek(0)
+            if self.handle.read(1) == b"":
+                self.handle.write(b"0")
+                self.handle.flush()
+            self.handle.seek(0)
             if os.name == "nt":
                 import msvcrt
                 msvcrt.locking(self.handle.fileno(),msvcrt.LK_NBLCK,1)
