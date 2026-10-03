@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from datetime import time
+from datetime import date, time
 from zoneinfo import ZoneInfo
 from typing import Literal
 
@@ -21,6 +21,7 @@ class Campaign(BaseModel):
     wordmark: str = ""
     aliases: list[str] = Field(default_factory=list)
     enabled: bool = True
+    active_from: date | None = None
     style: Literal["lushnote", "clinic"]
     timezone: str
     language_rules: dict

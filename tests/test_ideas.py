@@ -23,6 +23,7 @@ from bot.scheduling import slots_for
 def app(tmp_path,monkeypatch):
     settings,campaigns,_=load_config()
     store=Store(tmp_path/'ideas.sqlite3')
+    settings["workflow"]="scheduled"
     app=App(None,settings,campaigns,{'TELEGRAM_OWNER_CHAT_ID':'123'},store)
     app.telegram.send=AsyncMock(return_value={'message_id':80})
     app.telegram.answer=AsyncMock()

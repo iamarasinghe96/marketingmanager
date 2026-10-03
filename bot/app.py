@@ -19,6 +19,7 @@ from bot.linkedin import LinkedInClient
 from bot.pipeline import Pipeline
 from bot.replies import parse_reply,detect_campaign,detect_formats
 from bot.scheduling import local_day,slots_for
+from bot.daily import DailyFlow,HELP as DAILY_HELP
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class App:
         self.pipeline = Pipeline(settings,campaigns,store,self.text,self.images,self.telegram,self.meta,self.linkedin)
         self.stopping = False
         store.sync_campaigns(campaigns)
+        self.daily = DailyFlow(self) if settings.get("workflow","daily") == "daily" else None
         store.set("max_upload_bytes",settings["images"]["maximum_upload_mb"]*1024*1024)
 
     async def choose(self,kind,payload,options,prompt):
@@ -254,6 +256,9 @@ class App:
             lines.append("LinkedIn: enabled; " + ("token expires " + str(token["expires_at"]) if token else "token missing"))
         else:
             lines.append("LinkedIn: disabled")
+        if self.daily:
+            lines.extend(self.daily.status_lines())
+            return "\n".join(lines)
         lines.append("Next jobs:")
         for row in self.store.rows("SELECT d.id,d.campaign,d.kind,d.state,s.due_at FROM drafts d JOIN schedules s ON s.draft_id=d.id WHERE s.status='pending' ORDER BY s.due_at LIMIT 8"):
             lines.append(f"{row['id']} · {row['campaign']} {row['kind']} · {row['state']} · {row['due_at']}")
@@ -279,8 +284,14 @@ class App:
         args = text.split()
         name = args[0].split("@")[0].casefold()
         target = args[1] if len(args)>1 else None
+        if self.daily and name in {"/generate","/queue","/publish_now","/retry"}:
+            if name == "/generate":
+                await self.daily.start(self.daily.today())
+            else:
+                await self.telegram.send("\n".join(self.daily.status_lines()) + '\n\nTo post: send the image, then reply "approve". /help explains the daily flow.')
+            return
         if name in {"/start","/help"}:
-            await self.telegram.send(HELP)
+            await self.telegram.send(DAILY_HELP if self.daily else HELP)
         elif name == "/status":
             await self.telegram.send(self.status()[:4000])
         elif name == "/campaigns":
@@ -337,7 +348,9 @@ class App:
         try:
             callback = update.get("callback_query")
             message = update.get("message",{})
-            if callback:
+            if self.daily:
+                await self.handle_daily(callback,message)
+            elif callback:
                 await self.callback(callback)
             elif message.get("photo") or message.get("document"):
                 if message.get("media_group_id"):
@@ -349,6 +362,21 @@ class App:
         except Exception as exc:
             log.exception("Owner action failed")
             await self.telegram.send(str(exc)[:1800] + "\nUse /help for supported actions.")
+
+    async def handle_daily(self,callback,message):
+        if callback:
+            await self.telegram.answer(callback["id"])
+            if callback.get("data","").startswith("s:"):
+                await self.daily.callback(callback)
+            else:
+                await self.callback(callback)
+        elif message.get("photo") or message.get("document"):
+            path = ROOT/"out"/"originals"/(str(message["message_id"])+"-"+uuid.uuid4().hex[:8]+".image")
+            await self.daily.on_photo(message,await self.telegram.download_image(message,path))
+        elif message.get("text","").strip().startswith("/"):
+            await self.command(message["text"].strip())
+        elif message.get("text","").strip():
+            await self.daily.on_text(message)
 
     def buffer_album(self,message):
         album_id = str(message["media_group_id"])
@@ -374,6 +402,10 @@ class App:
                 await self.telegram.send("Could not finish the album: "+str(exc)+". Send it again as a new album; check /queue for any reserved drafts first.")
 
     async def tick(self):
+        if self.daily:
+            await self.daily.tick()
+            await self.housekeeping()
+            return
         await self.flush_albums()
         now = utcnow()
         for c in self.campaigns.values():
@@ -419,6 +451,9 @@ class App:
             elif due<=utcnow() and draft["state"] in {"awaiting_content","in_review","awaiting_image"} and not draft["reminded"]:
                 self.store.notify("approval_reminder:"+draft["id"],f"{c.name} {draft['kind']} ({draft['id']}) is due. It has not been approved, so it was not published. A later approval will publish today; it expires at local midnight.")
                 self.store.execute("UPDATE drafts SET reminded=1 WHERE id=?",(draft["id"],))
+        await self.housekeeping()
+
+    async def housekeeping(self):
         today = utcnow().date().isoformat()
         if self.store.get("health_day") != today:
             for issue in await self.meta.health(self.campaigns):
@@ -430,7 +465,7 @@ class App:
                     self.store.notify("linkedin_health:"+today,str(exc))
             self.store.set("health_day",today)
         local = utcnow().astimezone(ZoneInfo(self.settings["summary_timezone"]))
-        if local.strftime("%H:%M") >= self.settings["summary_time"] and self.store.get("summary_day") != local.date().isoformat():
+        if not self.daily and local.strftime("%H:%M") >= self.settings["summary_time"] and self.store.get("summary_day") != local.date().isoformat():
             cutoff = local.replace(hour=0,minute=0,second=0,microsecond=0).astimezone(ZoneInfo("UTC")).isoformat()
             pubs = self.store.rows("SELECT p.platform,p.kind,p.idempotency_key,p.permalink,d.campaign FROM publications p JOIN drafts d ON d.id=p.draft_id WHERE p.status='completed' AND p.updated_at>=? ORDER BY p.updated_at",(cutoff,))
             published = "\n".join(f"{'DRY_RUN ' if p['idempotency_key'].startswith('dry:') else ''}{p['campaign']} {p['kind']} · {p['platform']}" for p in pubs[:20]) or "None"
@@ -446,6 +481,13 @@ class App:
 
     async def recover(self):
         self.store.execute("UPDATE publications SET status='unknown' WHERE status='sending'")
+        if self.daily:
+            # The old scheduled drafts are retired; the daily flow never carries work over.
+            self.store.execute("UPDATE drafts SET state='skipped',updated_at=? WHERE state NOT IN ('published','skipped')",(stamp(),))
+            self.store.execute("UPDATE schedules SET status='skipped' WHERE status='pending'")
+            self.store.execute("UPDATE image_requests SET status='expired' WHERE status='pending'")
+            self.store.execute("UPDATE sessions SET state='failed',error='Interrupted while working' WHERE state IN ('generating','publishing')")
+            return
         for draft in self.store.rows("SELECT * FROM drafts WHERE state='publishing'"):
             self.store.transition(draft["id"],"failed",error="Publishing interrupted. /retry reconciles known receipts; uncertain writes need /resolve.")
         for draft in self.store.rows("SELECT * FROM drafts WHERE state IN ('generating','planned')"):
@@ -488,8 +530,9 @@ class App:
             raise ValueError("Run the setup wizard and fill secrets.txt first")
         for sig in (signal.SIGINT,signal.SIGTERM):
             signal.signal(sig,lambda *_: setattr(self,"stopping",True))
-        await self.telegram.send("Marketing Manager is online\n" + ("DRY_RUN=true. Nothing will be published." if self.settings["dry_run"] else "Live publishing enabled; owner approval required.") + "\nImages: manual ChatGPT handoff through Telegram. /help explains it.")
         await self.recover()
+        if not self.daily:
+            await self.telegram.send("Marketing Manager is online\n" + ("DRY_RUN=true. Nothing will be published." if self.settings["dry_run"] else "Live publishing enabled; owner approval required.") + "\nImages: manual ChatGPT handoff through Telegram. /help explains it.")
         while not self.stopping and not (ROOT/"data"/"stop.request").exists():
             try:
                 await self.tick()
@@ -505,6 +548,7 @@ class App:
                 log.exception("Background cycle failed; will retry")
                 await asyncio.sleep(5)
         try:
-            await self.telegram.send("Marketing Manager stopped. Drafts and publication receipts are saved.")
+            if not self.daily:
+                await self.telegram.send("Marketing Manager stopped. Drafts and publication receipts are saved.")
         except Exception:
             log.info("Stopped cleanly; Telegram stop notification unavailable")

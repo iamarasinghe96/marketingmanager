@@ -2,6 +2,8 @@ name: LushNote
 wordmark: LUSHNOTE
 aliases: [lushnote, lush note, ln]
 enabled: true
+# Daily prompts start on this date.
+active_from: 2026-11-01
 style: lushnote
 timezone: Australia/Sydney
 language_rules:

@@ -127,14 +127,24 @@ class Telegram:
             self.map_message(card["message_id"],draft)
         return card
 
-    async def document(self,path,draft=None):
+    async def document(self,path,draft=None,caption=None):
         path = Path(path)
         if path.stat().st_size > 49*1024*1024:
             raise ValueError(f"{path.name} exceeds Telegram's document limit. Use fewer/smaller references.")
-        message = await self.call("sendDocument",data={"chat_id":str(self.owner)},files={"document":(path.name,path.read_bytes(),"application/octet-stream")})
+        data = {"chat_id":str(self.owner)}
+        if caption:
+            data["caption"] = caption[:1024]
+        message = await self.call("sendDocument",data=data,files={"document":(path.name,path.read_bytes(),"application/octet-stream")})
         if draft:
             self.map_message(message["message_id"],draft)
         return message
+
+    async def photo(self,path,caption=None):
+        path = Path(path)
+        data = {"chat_id":str(self.owner)}
+        if caption:
+            data["caption"] = caption[:1024]
+        return await self.call("sendPhoto",data=data,files={"photo":(path.name,path.read_bytes(),"image/png")})
 
     async def handoff(self,campaign,draft,row,archive,files):
         due = self.store.one("SELECT due_at FROM schedules WHERE draft_id=?",(draft["id"],))["due_at"]

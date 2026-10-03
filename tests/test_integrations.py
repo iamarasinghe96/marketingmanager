@@ -94,6 +94,7 @@ async def test_write_timeout_is_ambiguous():
 
 async def test_dry_run_never_calls_publish_adapter(fixture):
     settings,campaigns,store,draft=fixture
+    settings["workflow"]="scheduled"
     app=App(None,settings,campaigns,{"TELEGRAM_OWNER_CHAT_ID":"123"},store)
     app.meta.publish=AsyncMock()
     store.transition(draft["id"],"generating")

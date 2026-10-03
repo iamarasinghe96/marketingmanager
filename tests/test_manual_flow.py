@@ -24,6 +24,7 @@ def app(tmp_path,monkeypatch):
     settings,campaigns,_=load_config()
     campaigns={"lushnote":campaigns["lushnote"]}
     db=Store(tmp_path/"flow.sqlite3")
+    settings["workflow"]="scheduled"
     app=App(None,settings,campaigns,{"TELEGRAM_OWNER_CHAT_ID":"123"},db)
     app.telegram.send=AsyncMock(return_value={"message_id":1})
     app.telegram.review=AsyncMock()

@@ -1,4 +1,10 @@
 dry_run: true
+# daily = greeting + "hi" session (current). scheduled = the older planned-draft workflow.
+workflow: daily
+daily:
+  timezone: Asia/Colombo
+  greeting_time: '08:00'
+  reminder_after_hours: 3
 database: data/marketing.sqlite3
 poll_seconds: 15
 summary_timezone: Australia/Sydney
