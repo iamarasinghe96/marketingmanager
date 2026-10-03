@@ -1,6 +1,6 @@
 # Build prompt: Marketing Manager bot
 
-Tell Codex: "Read `docs/CODEX_BUILD_PROMPT.md` on branch `claude/kind-goodall-d0zj62` and build exactly what it describes." Everything it needs (brand prompts, logos, screenshots, reference posts) is already in the repo.
+Tell Codex: "Read `docs/CODEX_BUILD_PROMPT.md` on `main` and build exactly what it describes." Everything it needs (brand prompts, logos, screenshots, reference posts) is already in the repo.
 
 ---
 
@@ -8,7 +8,7 @@ Tell Codex: "Read `docs/CODEX_BUILD_PROMPT.md` on branch `claude/kind-goodall-d0
 
 Build a **working, production-ready** social-media marketing bot (not a dashboard, not a mockup). It runs unattended on my **Windows Server VPS**, generates one feed post + one story per campaign per day, sends each draft to me on **Telegram** for review, applies my revisions, and publishes approved content to **Facebook Pages and Instagram** (LinkedIn later). I only review; everything else is automatic.
 
-Repository: `iamarasinghe96/marketingmanager`. Start from branch `claude/kind-goodall-d0zj62`, which already contains all brand assets in `assets/`. Ignore/delete any earlier React dashboard prototype; it is not wanted.
+Repository: `iamarasinghe96/marketingmanager`. Work from `main`, which already contains all brand assets in `assets/`. Ignore/delete any earlier React dashboard prototype; it is not wanted.
 
 ## Hard constraints
 
