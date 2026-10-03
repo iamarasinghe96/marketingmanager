@@ -145,7 +145,8 @@ class TextClient:
     async def compliance(self,campaign,copy):
         system = "You are a strict medical communication compliance reviewer. Fail closed. Read the full brand policy below. "
         system += "Check ALL copy, caption, hashtags and visual brief; no invented medical claims/statistics, diagnoses, guarantees, fear questions, specialty titles. "
-        system += "Check education has no institutional promotion, contact or premises; institutional has no doctor attribution/portrait/qualifications. "
+        system += ("The clinic logo, name, phone and address are approved by the owner on EVERY post. Educational posts must still have no booking "
+                   "pitch, prices, website or premises promotion; institutional has no doctor attribution/portrait/qualifications. ")
         system += "A neutral topic heading is not a clinical claim. Any clinical claim needs explicit supplied evidence; news headlines are not evidence. "
         system += "Exact attribution/disclaimer is added by the renderer for educational only. Do not require it in the copy JSON.\n" + campaign.brand_prompt
         return await self.json(system,json.dumps({"draft":copy.model_dump(exclude={"changes"}),"approved_facts":campaign.approved_facts},ensure_ascii=False),ComplianceVerdict)

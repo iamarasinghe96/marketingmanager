@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Copy(BaseModel):
@@ -21,6 +21,17 @@ class Copy(BaseModel):
     url: str = Field(default="", max_length=200)
     special_requirements: str = Field(default="", max_length=1800)
     changes: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="before")
+    @classmethod
+    def hashtags_out_of_caption(cls, data):
+        """Models often put hashtags inside the caption; move them to the hashtag list."""
+        import re
+        if isinstance(data, dict) and isinstance(data.get("caption"), str) and "#" in data["caption"]:
+            found = re.findall(r"#\w+", data["caption"], re.UNICODE)
+            data = {**data, "caption": re.sub(r"[ \t]*#\w+", "", data["caption"], flags=re.UNICODE).strip(),
+                    "hashtags": list(data.get("hashtags") or []) + found}
+        return data
 
     @field_validator("items")
     @classmethod

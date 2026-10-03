@@ -338,3 +338,16 @@ async def test_clinic_prompt_has_contact_band_and_restraint(app,monkeypatch):
     assert "PHONE:\n077 371 0528" in prompt and "ADDRESS:\n107 Vijaya Kumarathunga Mawatha, Colombo 5" in prompt
     assert "NO PEOPLE" in prompt and prompt.index("DESIGN RESTRAINT") < prompt.index("\nCAMPAIGN INPUT\n")
     assert "style_reference.png" in app.telegram.document.await_args_list[0].kwargs["caption"]
+
+
+def test_hashtags_in_caption_are_moved_and_contact_allowed():
+    from bot.compliance import deterministic_check
+    from bot.models import Copy
+    aac = load_config()[1]["allergy-asthma-centre"]
+    copy = Copy.model_validate({**sample(aac,"en").model_dump(),
+        "caption":"Know your triggers.\nAllergy & Asthma Centre – Colombo · 077 371 0528 · 107 Vijaya Kumarathunga Mawatha, Colombo 5\n#Asthma #AllergyCare",
+        "hashtags":[]})
+    assert "#" not in copy.caption and copy.hashtags == ["#Asthma","#AllergyCare"]
+    assert deterministic_check(aac,copy) == []
+    pitch = copy.model_copy(update={"caption":"Book an appointment today."})
+    assert "Educational copy contains booking promotion" in deterministic_check(aac,pitch)

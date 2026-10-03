@@ -45,11 +45,18 @@ def deterministic_check(campaign, copy: Copy):
         if re.search(r"\b\d+(?:[.,]\d+)?\s*%|\b(?:study|studies|research)\s+(?:shows|proves)",text,re.I):
             reasons.append("Statistics or research claims need supplied evidence")
         if copy.category == "EDUCATIONAL":
-            identifiers = [campaign.name,campaign.phone,campaign.address,campaign.website,
-                           "Allergy & Asthma Centre", "book an appointment", "book now", "WhatsApp", "0773710528"]
-            if any(normalise(x) in normalise(text) for x in identifiers if x):
-                reasons.append("Educational copy contains clinic/contact/booking promotion")
-            if re.search(r"https?://|www\.|\b(?:LKR|Rs\.?)\s*\d|\b\d{9,12}\b|[\w.+-]+@[\w.-]+",text,re.I):
+            # Owner decision: the clinic name, phone and address may appear on every post.
+            # Booking pitches, prices, web addresses and emails stay out of educational posts.
+            allowed = [campaign.name,"Allergy & Asthma Centre",campaign.phone,campaign.address,
+                       re.sub(r"\D","",campaign.phone or "")]
+            checked = text
+            for item in allowed:
+                if item:
+                    checked = re.sub(re.escape(item),"",checked,flags=re.I)
+            identifiers = ["book an appointment", "book now", "book your", "WhatsApp"]
+            if any(normalise(x) in normalise(checked) for x in identifiers):
+                reasons.append("Educational copy contains booking promotion")
+            if re.search(r"https?://|www\.|\b(?:LKR|Rs\.?)\s*\d|\b\d{9,12}\b|[\w.+-]+@[\w.-]+",checked,re.I):
                 reasons.append("Educational copy contains a website, contact or price")
             if copy.cta or copy.visual_kind == "premises":
                 reasons.append("Educational posts cannot use clinic CTAs or premises")
