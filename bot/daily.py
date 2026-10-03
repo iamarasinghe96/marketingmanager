@@ -81,7 +81,7 @@ class DailyFlow:
         self.app = app
         self.store, self.telegram, self.text = app.store, app.telegram, app.text
         self.settings, self.campaigns = app.settings, app.campaigns
-        self.config = {"timezone": "Asia/Colombo", "greeting_time": "08:00", "reminder_after_hours": 3,
+        self.config = {"timezone": "Australia/Sydney", "greeting_time": "08:00", "reminder_after_hours": 3,
                        **(self.settings.get("daily") or {})}
         self.store.conn.executescript(SCHEMA)
 

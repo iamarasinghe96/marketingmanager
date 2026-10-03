@@ -63,14 +63,14 @@ Use `/help` in Telegram for the complete command guide. **Stop Marketing Manager
 
 The bot works in one short session per day. Nothing is planned ahead and nothing carries over.
 
-1. **08:00 Colombo time**: the bot says *Good morning 👋 Reply "hi" to start today's posts.* If you don't reply, **nothing happens that day**. You can also send `hi` any time during the day.
+1. **08:00 Canberra time (ACT, AEST/AEDT)**: the bot says *Good morning 👋 Reply "hi" to start today's posts.* If you don't reply, **nothing happens that day**. You can also send `hi` any time during the day.
 2. **You reply `hi`**: for each active campaign you get **one `prompt.txt`**. It is the full brand prompt, word for word, with today's CAMPAIGN INPUT filled in by Groq. The message says what to attach in ChatGPT; the bot also sends that file, e.g. the logo for institutional clinic posts or a screenshot for LushNote. Educational clinic posts need no attachments, because they must not carry the clinic logo.
 3. **Make the image in ChatGPT** with that prompt, then **send the finished image** to the bot as a photo or a file. Sending as a file keeps full quality.
 4. The bot replies with the **image and its caption** together, plus one line: *Reply "approve" to post, or tell me what to change.*
 5. **To change the caption, just write what you want**, e.g. `make it shorter`, `remove the hashtags`, `add a line about dust mites`. The AI applies it, checks the brand and medical rules, and replies with only the new caption. Send a new image at any time to replace the image.
 6. **Reply `approve`** (or `ok` / 👍). It is posted **immediately** to the campaign's Facebook Page and Instagram, as a **feed post and a story**. The story uses the same image, padded to 9:16 on the brand background without cropping. You get one confirmation with the links.
 
-If you said `hi` but something is unfinished, you get **one** reminder 3 hours after your last message. At midnight Colombo time anything unfinished is dropped. Start a session with an idea by writing `hi, idea: <your idea>`.
+If you said `hi` but something is unfinished, you get **one** reminder 3 hours after your last message. At midnight Canberra time anything unfinished is dropped. Start a session with an idea by writing `hi, idea: <your idea>`.
 
 Captions for the Allergy & Asthma Centre never include the doctor's name or credentials (the approved attribution belongs only in the educational artwork), and include the Sinhala disclaimer at most once.
 
@@ -81,7 +81,7 @@ Settings in `config.yaml`:
 ```yaml
 workflow: daily          # "scheduled" restores the older planned-draft workflow
 daily:
-  timezone: Asia/Colombo
+  timezone: Australia/Sydney   # ACT time
   greeting_time: '08:00'
   reminder_after_hours: 3
 ```

@@ -2,7 +2,8 @@ dry_run: true
 # daily = greeting + "hi" session (current). scheduled = the older planned-draft workflow.
 workflow: daily
 daily:
-  timezone: Asia/Colombo
+  # Australian Capital Territory time (Canberra uses Sydney time, incl. daylight saving).
+  timezone: Australia/Sydney
   greeting_time: '08:00'
   reminder_after_hours: 3
 database: data/marketing.sqlite3

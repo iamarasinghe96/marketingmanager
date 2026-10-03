@@ -18,6 +18,9 @@ def app(tmp_path,monkeypatch):
     settings["workflow"] = "daily"
     settings["dry_run"] = True
     store = Store(tmp_path/"daily.sqlite3")
+    assert settings["daily"]["timezone"] == "Australia/Sydney"
+    # The scenarios below are written in Colombo time; the flow logic is timezone-agnostic.
+    settings["daily"]["timezone"] = "Asia/Colombo"
     app = App(None,settings,campaigns,{"TELEGRAM_OWNER_CHAT_ID":"123"},store)
     app.telegram.send = AsyncMock(return_value={"message_id":10})
     app.telegram.document = AsyncMock(return_value={"message_id":11})
@@ -164,3 +167,17 @@ def test_fit_pads_without_cropping(tmp_path):
 @pytest.mark.parametrize("text,expected",[("hi",True),("Hi!",True),("hello",True),("hi there friend",False),("approve",False)])
 def test_greeting(text,expected):
     assert is_greeting(text) == expected
+
+
+async def test_default_greeting_is_canberra_time(tmp_path,monkeypatch):
+    settings,campaigns,_ = load_config()
+    store = Store(tmp_path/"act.sqlite3")
+    app = App(None,settings,campaigns,{"TELEGRAM_OWNER_CHAT_ID":"123"},store)
+    app.telegram.send = AsyncMock(return_value={"message_id":1})
+    at(monkeypatch,"2026-10-04T20:59:00+00:00")  # 07:59 AEDT, Monday 5 Oct
+    await app.daily.tick()
+    app.telegram.send.assert_not_called()
+    at(monkeypatch,"2026-10-04T21:00:00+00:00")  # 08:00 AEDT
+    await app.daily.tick()
+    assert app.telegram.send.await_count == 1
+    store.close()
