@@ -68,9 +68,12 @@ async def test_hi_sends_only_active_campaign_prompt(app,monkeypatch):
     assert app.text.write.await_count == 1
     caption = app.telegram.document.await_args_list[0].kwargs["caption"]
     assert caption.startswith("Allergy & Asthma Centre")
-    assert "No attachments needed" in caption  # educational: no clinic logo
+    assert "Attach: logo.png" in caption  # the clinic logo goes on every post
+    assert app.telegram.document.await_args_list[1].args[0].name == "logo.png"
     prompt = app.telegram.document.await_args_list[0].args[0].read_text(encoding="utf-8")
     assert "CAMPAIGN TYPE:\nEDUCATIONAL" in prompt and "ABSOLUTE MEDICAL COMMUNICATION RULES" in prompt
+    assert "DOCTOR ATTRIBUTION:\nNONE" in prompt and "Ajith" not in prompt
+    assert "logo exactly as supplied on EVERY post" in prompt
     session = app.daily.sessions(app.daily.today())[0]
     assert session["state"] == "awaiting_image"
     assert "Explained by" not in session["caption"] and "#AsthmaAwareness" in session["caption"]

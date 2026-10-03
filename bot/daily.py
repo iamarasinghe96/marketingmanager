@@ -310,7 +310,7 @@ class DailyFlow:
 
     def assets(self, campaign, copy):
         files = []
-        if campaign.style != "clinic" or copy.category == "INSTITUTIONAL":
+        if True:  # Every post, both campaigns, carries the official logo.
             files.append((campaign.asset(campaign.logo_path), "logo" + Path(campaign.logo_path).suffix))
         if copy.visual_kind == "screenshot":
             shots = campaign.files(campaign.screenshots)

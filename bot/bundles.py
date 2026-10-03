@@ -21,7 +21,7 @@ def reference_requirements(campaign, references, instructions=""):
     if references and instructions:
         rules.append("Owner's exact reference instructions:\n" + instructions)
     if campaign.style == "clinic":
-        rules.append("EDUCATIONAL / INSTITUTIONAL separation and medical communication rules take priority over the reference. Never copy doctor portraits into institutional artwork or clinic branding into educational artwork.")
+        rules.append("EDUCATIONAL / INSTITUTIONAL separation and medical communication rules take priority over the reference. Never copy doctor portraits, names or credentials into any artwork.")
     return "\n\n".join(rules)
 
 
@@ -55,7 +55,8 @@ def filled_prompt(campaign, draft, references):
                   "PHONE": "NONE" if educational else campaign.phone or "NONE",
                   "ADDRESS": "NONE" if educational else campaign.address or "NONE",
                   "WEBSITE / EMAIL": "NONE" if educational else copy.url or campaign.website or "NONE",
-                  "DOCTOR ATTRIBUTION": campaign.required_footer_rules.get("attribution", "NONE") if educational else "NONE",
+                  # Owner decision: no doctor attribution in artwork; the clinic logo is the only branding.
+                  "DOCTOR ATTRIBUTION": "NONE",
                   "EDUCATIONAL DISCLAIMER": campaign.required_footer_rules.get("disclaimer", "NONE") if educational else "NONE"}
     original = campaign.brand_prompt
     marker = "\nCAMPAIGN INPUT\n"
@@ -90,7 +91,7 @@ def build_bundle(campaign, draft, references, directory):
     files.append(prompt)
     copy = Copy.model_validate_json(draft["copy"])
     assets = []
-    if campaign.style != "clinic" or copy.category == "INSTITUTIONAL":
+    if True:  # Every post carries the official logo.
         assets.append((campaign.asset(campaign.logo_path), "logo" + Path(campaign.logo_path).suffix))
     for index, source in enumerate(campaign.files(campaign.screenshots), 1):
         assets.append((source, f"screenshot_{index}{source.suffix}"))

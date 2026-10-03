@@ -44,15 +44,13 @@ ALLOWED:
 - disease or symptom education
 - general prevention information
 - general management concepts
-- doctor's name when explicitly supplied
-- registered qualifications when explicitly supplied
+- the attached Allergy & Asthma Centre logo, used as restrained branding (required on every post)
 - educational disclaimer when supplied
-- reference to the doctor's educational content or channel when explicitly supplied
 - simple medical illustrations
 - neutral editorial medical photography where appropriate
 
 DO NOT INCLUDE:
-- Allergy & Asthma Centre logo
+- any doctor's name, qualifications, credentials, title or "Explained by" attribution
 - clinic phone number
 - clinic address
 - clinic email
@@ -209,7 +207,7 @@ PRIMARY VISUAL CHARACTER:
 - modern but not futuristic
 - approachable without becoming childish
 
-Use the attached clinic logo exactly as supplied when the post is INSTITUTIONAL.
+Use the attached clinic logo exactly as supplied on EVERY post, educational and institutional.
 
 Do not:
 - redraw the logo
@@ -608,19 +606,13 @@ Do not allow the WhatsApp logo to overpower the clinic identity.
 EDUCATIONAL FOOTER
 ======================================================================
 
-When the CAMPAIGN INPUT specifies that the standard educational footer is required, reproduce the supplied footer exactly.
+When the CAMPAIGN INPUT supplies the educational disclaimer, reproduce it exactly in a small, quiet footer.
+
+Do NOT place any doctor attribution, name or credentials in the artwork. The clinic logo is the only branding.
 
 Current supplied Sinhala disclaimer:
 
 "මෙය පොදු සෞඛ්‍ය දැනුවත් කිරීමක් පමණි; වෛද්‍ය උපදෙසක් හෝ රෝග විනිශ්චයක් නොවේ. ඔබේ රෝග ලක්ෂණ සම්බන්ධයෙන් ලියාපදිංචි වෛද්‍යවරයෙකුගෙන් උපදෙස් ලබා ගන්න."
-
-Current supplied attribution format:
-
-"විස්තර කරන්නේ / Explained by: Dr. Ajith Amarasinghe — MBBS, DCH, MD (Paediatrics), MRCP (UK), MRCPCH (UK), MBA (Health Care)"
-
-STATUS (confirmed by the owner): this credential string is APPROVED and current. Use it exactly as written.
-
-Do not independently modify credentials.
 
 Do not use this educational footer on an institutional advertisement.
 
@@ -741,7 +733,7 @@ PRIMARY VISUAL:
 "Choose the most appropriate restrained visual treatment."]
 
 ATTACHED ASSETS:
-- Use attached Allergy & Asthma Centre logo exactly as supplied when permitted.
+- Use the attached Allergy & Asthma Centre logo exactly as supplied on every post.
 - Use attached clinic premises photograph exactly as supplied when relevant to an INSTITUTIONAL campaign.
 - Use supplied campaign examples to understand the visual identity only.
 - Do not copy their layouts mechanically.

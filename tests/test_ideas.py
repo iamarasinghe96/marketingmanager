@@ -179,13 +179,13 @@ async def test_aac_cure_rewrite_explained_and_category_assets_separated(app,tmp_
     await app.pipeline.content.approve(draft)
     archive=app.telegram.handoff.await_args.args[-2]
     with zipfile.ZipFile(archive) as bundle:
-        assert 'logo.png' not in bundle.namelist()
+        assert 'logo.png' in bundle.namelist()  # owner rule: logo on every clinic post
         prompt=bundle.read('prompt.txt').decode('utf-8')
     block=prompt.split('\nCAMPAIGN INPUT\n')[1].split('\nFINAL STANDARD\n')[0]
     assert 'CAMPAIGN TYPE:\nEDUCATIONAL' in block
     assert 'LANGUAGE:\nENGLISH' in block
     assert 'PHONE:\nNONE' in block and 'CTA:\nNONE' in block
-    assert app.campaigns[draft['campaign']].required_footer_rules['attribution'] in block
+    assert 'DOCTOR ATTRIBUTION:\nNONE' in block and 'Ajith' not in block
     assert 'Permanent cure' not in block
     institutional=sample(app.campaigns['allergy-asthma-centre'],category='INSTITUTIONAL')
     app.text.write.side_effect=None;app.text.write.return_value=institutional
