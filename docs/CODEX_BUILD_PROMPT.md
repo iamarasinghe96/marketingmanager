@@ -1,6 +1,6 @@
 # Build prompt: Marketing Manager bot
 
-Paste everything below the line into Codex. Then paste the two brand prompts (LushNote and Allergy & Asthma Centre) after it, where it says so at the end.
+Tell Codex: "Read `docs/CODEX_BUILD_PROMPT.md` on branch `claude/kind-goodall-d0zj62` and build exactly what it describes." Everything it needs (brand prompts, logos, screenshots, reference posts) is already in the repo.
 
 ---
 
@@ -167,8 +167,23 @@ If I send a message that is not a reply to a draft, e.g. `Idea: post about after
 
 ## Brand prompts
 
-The two full brand prompts follow. Save them verbatim as `campaigns/lushnote/brand_prompt.md` and `campaigns/allergy-asthma-centre/brand_prompt.md`, and use them as the governing rules for copywriting, image briefs, layout choice and compliance checks.
+The full brand prompts are already in the repo. Read both completely before writing any code, and use them as the governing rules for copywriting, image briefs, layout choice and compliance checks:
 
-[PASTE LUSHNOTE PROMPT HERE]
+- `campaigns/lushnote/brand_prompt.md`
+- `campaigns/allergy-asthma-centre/brand_prompt.md`
 
-[PASTE ALLERGY & ASTHMA CENTRE PROMPT HERE]
+They were written for a one-shot image generator, so apply them like this: the "CAMPAIGN INPUT" block is what the bot fills in each day (via Groq); the text, colour, typography, layout and logo rules are enforced by the HTML templates and the compliance check; and the photography/illustration rules go into the Gemini image prompt (always with "no text, no logos, no UI"). Keep both files as editable data, so I can change a brand rule without touching code.
+
+## Repo map (already present)
+
+```
+assets/lushnote/logo.png
+assets/lushnote/screenshot-*.png|jpg          real app UI, use as-is
+assets/lushnote/past-posts/*.webp             style references only
+assets/allergy-asthma-centre/logo.png
+assets/allergy-asthma-centre/premises.webp    crop to clinic side
+assets/allergy-asthma-centre/past-posts/*.png style references only
+campaigns/lushnote/brand_prompt.md
+campaigns/allergy-asthma-centre/brand_prompt.md
+docs/CODEX_BUILD_PROMPT.md                    this spec
+```
