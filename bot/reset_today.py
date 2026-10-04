@@ -9,6 +9,16 @@ from zoneinfo import ZoneInfo
 from bot.config import ROOT, load_config
 
 
+def clear(connection, today, dry_run=True):
+    where = "day=?" + ("" if dry_run else " AND state != 'published'")
+    # Keep a copy so replying to an old preview can bring that post back after the update.
+    connection.execute("CREATE TABLE IF NOT EXISTS cleared_sessions AS SELECT * FROM sessions WHERE 0")
+    columns = ",".join(row[1] for row in connection.execute("PRAGMA table_info(cleared_sessions)"))
+    connection.execute(f"INSERT INTO cleared_sessions({columns}) SELECT {columns} FROM sessions WHERE {where}", (today,))
+    cleared = connection.execute(f"DELETE FROM sessions WHERE {where}", (today,)).rowcount
+    return cleared
+
+
 def main():
     settings, _, _ = load_config()
     path = ROOT / settings["database"]
@@ -22,10 +32,7 @@ def main():
         if not connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone():
             print("No sessions to clear.")
             return
-        sql = "DELETE FROM sessions WHERE day=?"
-        if not settings.get("dry_run", True):
-            sql += " AND state != 'published'"
-        cleared = connection.execute(sql, (today,)).rowcount
+        cleared = clear(connection, today, settings.get("dry_run", True))
         connection.commit()
     finally:
         connection.close()

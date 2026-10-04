@@ -235,7 +235,34 @@ class DailyFlow:
         reference = message.get("reply_to_message", {}).get("message_id")
         row = self.store.one("SELECT session_id FROM session_messages WHERE message_id=?", (reference,)) if reference else None
         session = self.session(row["session_id"]) if row else None
+        if row and not session:
+            session = self.restore(day, row["session_id"])
         return session if session and session["day"] == day.isoformat() else None
+
+    def restore(self, day, session_id=None):
+        """Bring back a post that update.bat cleared today (by id, or the latest one with an image)."""
+        if not self.store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='cleared_sessions'"):
+            return None
+        if session_id:
+            old = self.store.one("SELECT * FROM cleared_sessions WHERE id=? AND day=?", (session_id, day.isoformat()))
+        else:
+            old = self.store.one("SELECT * FROM cleared_sessions WHERE day=? AND state='awaiting_approval' "
+                                 "ORDER BY updated_at DESC LIMIT 1", (day.isoformat(),))
+        if not old or old["state"] in ("published", "publishing"):
+            return None
+        old = dict(old)
+        if old.get("kind", "daily") == "daily":
+            clash = [s for s in self.sessions(day, kind="daily") if s["campaign"] == old["campaign"]]
+            if any(s["state"] in ("published", "publishing") for s in clash):
+                return None
+            for s in clash:
+                self.store.execute("DELETE FROM sessions WHERE id=?", (s["id"],))
+        columns = [c for c in old if c in {r["name"] for r in self.store.rows("PRAGMA table_info(sessions)")}]
+        self.store.execute(f"INSERT INTO sessions({','.join(columns)}) VALUES({','.join('?' * len(columns))})",
+                           tuple(old[c] for c in columns))
+        self.store.execute("DELETE FROM cleared_sessions WHERE id=?", (old["id"],))
+        log.info("Restored cleared session %s", old["id"])
+        return self.session(old["id"])
 
     def history(self, campaign, day):
         cutoff = (day - timedelta(days=30)).isoformat()
@@ -294,6 +321,9 @@ class DailyFlow:
         session = replied or await self.pick(day, ("awaiting_approval", "awaiting_image", "failed"), {"text": text})
         if session is False:
             return
+        if not session and not self.sessions(day):
+            # Probably mid-edit when update.bat cleared the day: carry on with that post.
+            session = self.restore(day)
         if not session:
             if not self.sessions(day):
                 await self.telegram.send('Reply "hi" to start today\'s posts.')

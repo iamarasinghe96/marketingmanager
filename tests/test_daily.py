@@ -532,3 +532,21 @@ async def test_free_text_question_gets_an_answer(app,monkeypatch):
     app.text.json = AsyncMock(return_value=Intent(action="other",reply="Say 'create a post about X' to start."))
     await app.daily.on_text({"message_id":1,"text":"what can you do?"})
     assert app.telegram.send.await_args.args[0] == "Say 'create a post about X' to start."
+
+
+async def test_post_cleared_by_update_comes_back_on_reply_or_edit(app,monkeypatch,tmp_path):
+    from bot.reset_today import clear
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    await app.daily.on_photo({"message_id":2},image(tmp_path))
+    session = app.daily.sessions(app.daily.today())[0]
+    clear(app.store.conn, session["day"])
+    assert app.daily.sessions(app.daily.today()) == []
+    # Replying to the old preview restores it.
+    restored = app.daily.replied_session({"reply_to_message":{"message_id":12}}, app.daily.today())
+    assert restored["id"] == session["id"] and restored["state"] == "awaiting_approval"
+    # A plain edit after an update also carries on with the cleared post.
+    clear(app.store.conn, session["day"])
+    app.text.json = AsyncMock(return_value=CaptionEdit(caption="Short and clear.",hashtags=["#Asthma"]))
+    await app.daily.on_text({"message_id":3,"text":"make it shorter"})
+    assert app.daily.session(session["id"])["caption"].startswith("Short and clear.")
