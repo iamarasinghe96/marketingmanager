@@ -510,3 +510,25 @@ def test_sinhala_hashtags_are_moved_whole_without_leaving_fragments():
     copy = Copy.model_validate({**sample(aac,"si").model_dump(),"caption":caption,"hashtags":[]})
     assert copy.caption == "ඇදුම පිළිබඳ දැනුවත් වන්න. 077 371 0528."
     assert copy.hashtags == ["#ආසාත්මිකතා","#ඇදුම","#Asthma"]  # the joiner tag (සෞඛ්‍යය) is dropped
+
+
+async def test_free_text_request_starts_post_with_topic(app,monkeypatch):
+    from bot.daily import Intent
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    app.text.json = AsyncMock(return_value=Intent(action="start",idea="hair dye allergy",campaign="allergy-asthma-centre"))
+    await app.daily.on_text({"message_id":1,"text":"create a post about hair dye allergy today"})
+    assert app.text.write.await_args.args[3] == "hair dye allergy"
+    assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"
+    # Later the same day: a different topic replaces the waiting prompt.
+    app.text.json = AsyncMock(return_value=Intent(action="new_topic",idea="dust mites"))
+    await app.daily.on_text({"message_id":2,"text":"actually let's do dust mites instead"})
+    assert app.text.write.await_args.args[3] == "dust mites"
+    assert len(app.daily.sessions(app.daily.today())) == 1
+
+
+async def test_free_text_question_gets_an_answer(app,monkeypatch):
+    from bot.daily import Intent
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    app.text.json = AsyncMock(return_value=Intent(action="other",reply="Say 'create a post about X' to start."))
+    await app.daily.on_text({"message_id":1,"text":"what can you do?"})
+    assert app.telegram.send.await_args.args[0] == "Say 'create a post about X' to start."

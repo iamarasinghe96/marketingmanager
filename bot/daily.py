@@ -94,6 +94,16 @@ class TitleEdit(BaseModel):
     caption_instruction: str = Field(default="", max_length=1000)
 
 
+class Intent(BaseModel):
+    """What a free-form owner message means."""
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["start", "new_topic", "approve", "edit", "other"]
+    idea: str = Field(default="", max_length=500)
+    language: Literal["", "en", "si", "ta"] = ""
+    campaign: str = Field(default="", max_length=60)
+    reply: str = Field(default="", max_length=500)
+
+
 class CaptionEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     caption: str = Field(min_length=2, max_length=1700)
@@ -278,7 +288,10 @@ class DailyFlow:
             return await self.start(day, language=code)
         if lowered.startswith(("hi ", "hi,", "hello ", "hello,")):
             return await self.start(day, idea=re.sub(r"^(hi|hello)[\s,!.]*", "", text, flags=re.I))
-        session = self.replied_session(message, day) or await self.pick(day, ("awaiting_approval", "awaiting_image", "failed"), {"text": text})
+        replied = self.replied_session(message, day)
+        if not replied and not is_approval(text) and not is_new_prompt(text) and await self.understand(day, text):
+            return
+        session = replied or await self.pick(day, ("awaiting_approval", "awaiting_image", "failed"), {"text": text})
         if session is False:
             return
         if not session:
@@ -360,7 +373,7 @@ class DailyFlow:
             await self.act(session, payload.get("text", ""))
 
     # ---- steps ------------------------------------------------------------------------
-    async def start(self, day, idea="", language=None):
+    async def start(self, day, idea="", language=None, target=None):
         existing = self.sessions(day, kind="daily")
         if existing:
             unfinished = [s for s in existing if s["state"] in OPEN]
@@ -374,7 +387,7 @@ class DailyFlow:
         if not campaigns:
             await self.telegram.send("No campaigns are active today.")
             return
-        target = detect_campaign(idea, self.campaigns) if idea else None
+        target = target or (detect_campaign(idea, self.campaigns) if idea else None)
         for campaign in campaigns:
             session_id = uuid.uuid4().hex[:12]
             try:
@@ -625,14 +638,64 @@ class DailyFlow:
         tail = LINE if session["state"] == "awaiting_approval" else "Send me the finished image when ready."
         self.remember(await self.telegram.send((session["caption"] + "\n\n" + tail)[:4000]), session)
 
-    async def start_one(self, session):
+    async def understand(self, day, text):
+        """Let the AI read a free-form message ("create a post about hair dye allergy today").
+        Returns True when it was handled here; False sends it down the normal edit path."""
+        open_sessions = [s for s in self.sessions(day, kind="daily") if s["state"] in OPEN]
+        state = [{"campaign": s["campaign"], "waiting_for": waiting_for(s)} for s in open_sessions]
+        system = (
+            "You route messages from the owner of a social media marketing bot. Each day the bot writes one post per "
+            "campaign: it sends an image prompt, the owner sends back the image, then the owner edits the caption and "
+            "approves. Classify the owner's message:\n"
+            "- start: they want today's post(s) created, optionally about a topic (put the topic in idea, in English, "
+            "keeping their details) and/or in a language (en, si=Sinhala, ta=Tamil).\n"
+            "- new_topic: posts already exist today but they want a DIFFERENT topic / a fresh prompt (idea as above).\n"
+            "- approve: they clearly approve posting now.\n"
+            "- edit: a change to the caption, title or image of the current post.\n"
+            "- other: a question or chat; put a short helpful answer in reply (explain they can say e.g. "
+            "'create a post about X', send an image, ask for changes, or 'approve').\n"
+            "campaign: the campaign slug if the message names or clearly implies one, else empty. Campaigns: "
+            + json.dumps({slug: c.name for slug, c in self.campaigns.items()}) + ". Medical/allergy topics mean the clinic.")
+        try:
+            intent = await self.text.json(system, json.dumps({"open_posts_today": state, "message": text},
+                                                             ensure_ascii=False), Intent, task="checking")
+        except Exception as exc:  # AI unavailable: fall back to the normal edit path.
+            log.warning("Could not read the message's intent: %s", str(exc)[:200])
+            return False
+        if not isinstance(intent, Intent):
+            return False
+        target = intent.campaign if intent.campaign in self.campaigns else ""
+        if intent.action == "start" and not self.sessions(day, kind="daily"):
+            await self.start(day, idea=intent.idea, language=intent.language or None, target=target)
+            return True
+        if intent.action in ("start", "new_topic"):
+            redo = [s for s in open_sessions if not target or s["campaign"] == target]
+            if not redo:
+                return False
+            if len(redo) > 1:
+                redo = [s for s in redo if s["state"] != "awaiting_approval"] or redo
+            for session in redo[:1] if target or len(redo) == 1 else redo:
+                self.store.execute("DELETE FROM sessions WHERE id=?", (session["id"],))
+                await self.start_one(session, idea=intent.idea, language=intent.language or None)
+            return True
+        if intent.action == "approve":
+            session = await self.pick(day, ("awaiting_approval", "awaiting_image"), {"text": "approve"})
+            if session:
+                await self.act(session, "approve")
+            return session is not None
+        if intent.action == "other" and intent.reply:
+            await self.telegram.send(intent.reply)
+            return True
+        return False
+
+    async def start_one(self, session, idea="", language=None):
         campaign = self.campaigns[session["campaign"]]
         day = date.fromisoformat(session["day"])
         session_id = uuid.uuid4().hex[:12]
         self.store.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at) VALUES(?,?,?,?,?,?)",
                            (session_id, campaign.slug, day.isoformat(), "generating", stamp(), stamp()))
         try:
-            copy = await self.write(campaign, day)
+            copy = await self.write(campaign, day, idea, language)
             new = self.update(session_id, state="awaiting_image", copy=copy.model_dump_json(), caption=self.caption(campaign, copy))
             await self.send_prompt(campaign, new, copy)
         except Exception as exc:
