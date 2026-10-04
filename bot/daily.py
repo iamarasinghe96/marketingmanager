@@ -287,7 +287,10 @@ class DailyFlow:
         if not session:
             caption = message.get("caption", "")
             slug = detect_campaign(caption, self.campaigns) if caption else None
-            waiting = [s for s in self.sessions(day, ("awaiting_image",)) if not slug or s["campaign"] == slug]
+            # A new image while a post is waiting for its image OR for approval replaces that post's
+            # picture (caption kept); "own post" in the photo caption makes it a separate post.
+            waiting = [s for s in self.sessions(day, ("awaiting_image", "awaiting_approval"))
+                       if s["kind"] == "daily" and (not slug or s["campaign"] == slug)]
             if OWN_HINTS.search(caption) or not waiting:
                 # Not for a waiting daily prompt: it's the owner's own finished post.
                 return await self.own(path, caption, slug)

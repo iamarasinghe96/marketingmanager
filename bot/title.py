@@ -53,12 +53,12 @@ def calm_box(image, box):
     sw, sh = small.size
 
     def busy(px, py):
-        return light[px, py] < 175 or edges[px, py] > 40
+        return light[px, py] < 140 or edges[px, py] > 60
 
     right = sw
     streak = 0
     for col in range(sw):
-        if sum(busy(col, row) for row in range(sh)) / sh > 0.12:
+        if sum(busy(col, row) for row in range(sh)) / sh > 0.25:
             streak += 1
             if streak >= 3:
                 right = col - 5  # stop with a small gap before the photo
@@ -68,7 +68,7 @@ def calm_box(image, box):
     bottom = sh
     streak = 0
     for row in range(sh):
-        if sum(busy(col, row) for col in range(max(1, right))) / max(1, right) > 0.12:
+        if sum(busy(col, row) for col in range(max(1, right))) / max(1, right) > 0.25:
             streak += 1
             if streak >= 3:
                 bottom = row - 2
@@ -76,8 +76,8 @@ def calm_box(image, box):
         else:
             streak = 0
     # If the area is mostly busy, keep the requested box rather than shrinking to nothing.
-    width = right * 4 if right >= sw * 0.5 else w
-    height = bottom * 4 if bottom >= sh * 0.5 else h
+    width = right * 4 if right >= sw * 0.7 else w
+    height = bottom * 4 if bottom >= sh * 0.7 else h
     return x, y, width, height
 
 
