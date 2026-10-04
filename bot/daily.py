@@ -10,6 +10,7 @@ import re
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageOps
@@ -73,14 +74,24 @@ class WhichCampaign(BaseModel):
 OWN_HINTS = re.compile(r"\b(own|new post|inspiration|my post|post this|extra post)\b", re.I)
 
 
-TITLE_HINTS = re.compile(r"\b(font|title|heading|headline|bigger|smaller|larger|size|line ?breaks?|break|wrap|lines?)\b", re.I)
+TITLE_DEFAULTS = {"text": "", "scale": 1.0, "align": "left", "valign": "top", "fill": False, "color": "",
+                  "line_height": 1.3, "highlight": [], "highlight_color": "", "weight": 800}
 
 
 class TitleEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    about_title: bool
-    scale: float = Field(default=1.0, ge=0.4, le=2.0)
+    about_title: bool = False
     text: str = Field(default="", max_length=200)
+    scale: float = Field(default=1.0, ge=0.4, le=2.5)
+    align: Literal["left", "center", "right"] = "left"
+    valign: Literal["top", "middle", "bottom"] = "top"
+    fill: bool = False
+    color: str = Field(default="", max_length=20)
+    line_height: float = Field(default=1.3, ge=0.9, le=2.0)
+    highlight: list[str] = Field(default_factory=list, max_length=6)
+    highlight_color: str = Field(default="", max_length=20)
+    weight: Literal[400, 500, 600, 700, 800] = 800
+    caption_instruction: str = Field(default="", max_length=1000)
 
 
 class CaptionEdit(BaseModel):
@@ -491,50 +502,72 @@ class DailyFlow:
         copy = Copy.model_validate_json(session["copy"])
         return bool(campaign.title_box and copy.language in ("si", "ta") and session["kind"] == "daily")
 
+    def title_style(self, session):
+        style = dict(TITLE_DEFAULTS)
+        style.update(json.loads(self.store.get(f"title:{session['id']}") or "{}"))
+        return style
+
     async def titled(self, session, picture):
         if not self.typed_title(session):
             return picture
         from bot.title import add_title
         campaign = self.campaigns[session["campaign"]]
         copy = Copy.model_validate_json(session["copy"])
-        saved = json.loads(self.store.get(f"title:{session['id']}") or "{}")
-        return await add_title(picture, saved.get("text") or copy.headline, copy.language,
-                               campaign.palette.get("primary", "#0B4257"), campaign.title_box, saved.get("scale", 1.0))
+        style = self.title_style(session)
+        style["text"] = style["text"] or copy.headline
+        style["color"] = style["color"] or campaign.palette.get("primary", "#0B4257")
+        style["highlight_color"] = style["highlight_color"] or campaign.palette.get("accent", style["color"])
+        return await add_title(picture, style.pop("text"), copy.language, style.pop("color"), campaign.title_box, **style)
 
     async def retitle(self, session, instruction):
-        """Redo the typed title on the original picture (size / line breaks); caption untouched.
-        Returns False when the instruction is not about the title."""
+        """Let the AI restyle the typed title (size, line breaks, alignment, filling the space, colour…) on the
+        original picture. Returns the part of the message meant for the caption ("" when none), or None
+        when the message is not about the title at all."""
         raw = Path(session["image_path"]).with_name("raw.png")
         if not raw.is_file():
-            return False
+            return None
+        campaign = self.campaigns[session["campaign"]]
         copy = Copy.model_validate_json(session["copy"])
-        saved = json.loads(self.store.get(f"title:{session['id']}") or "{}")
-        current = {"text": saved.get("text") or copy.headline, "scale": saved.get("scale", 1.0)}
-        system = ("The owner is reviewing a social media image with a typed title. Decide if their message is about the "
-                  "TITLE ON THE IMAGE (font size, line breaks, wording of the title) rather than the caption. "
-                  "If so, return about_title=true, the new scale (1.0 = current size; 'bigger' about x1.3 of the current scale, "
-                  "'smaller' about x0.75; range 0.4-2.0) and the title text with line breaks as \\n where the owner wants them. "
-                  "Keep the title words exactly unless the owner asks to change them. Otherwise about_title=false.")
+        current = self.title_style(session)
+        current["text"] = current["text"] or copy.headline
+        system = (
+            "The owner is reviewing a social media image. The bot types the TITLE onto the image in the empty area, "
+            "and there is a separate CAPTION under the post. Decide whether the owner's message asks for any change to "
+            "the title on the image. If not, return about_title=false and nothing else.\n"
+            "If yes, return about_title=true and the COMPLETE new title style (start from current_style and change only "
+            "what the owner asks):\n"
+            "- text: the title words, with line breaks written as \\n. Keep every word exactly unless the owner asks to "
+            "change, add or remove words. 'Put X on its own line / in the middle' -> break the lines around X and usually "
+            "align center. 'Rearrange / balance the lines' -> choose breaks so lines have similar length.\n"
+            "- scale: size relative to the normal fit (1.0). 'bigger' -> current x1.3, 'much bigger' x1.6, 'smaller' x0.75.\n"
+            "- fill: true when the owner wants the title to fill the white/empty area as much as possible (then also "
+            "choose balanced line breaks, usually 2-4 lines, that make the text as large as possible).\n"
+            "- align: left/center/right. valign: top/middle/bottom (position inside the empty area).\n"
+            "- color / highlight_color: CSS colours (e.g. #0B4257). Brand colours: "
+            + json.dumps(campaign.palette) + ". highlight: words to show in highlight_color.\n"
+            "- line_height: line spacing (1.3 normal; 'tighter' 1.1, 'more space' 1.6). weight: 400 (regular) to 800 (extra bold).\n"
+            "- caption_instruction: any part of the message that is about the CAPTION instead, else empty.")
         try:
-            result = await self.text.json(system, json.dumps({"current_title": current, "owner_message": instruction},
+            result = await self.text.json(system, json.dumps({"current_style": current, "owner_message": instruction},
                                                              ensure_ascii=False), TitleEdit, task="checking")
         except (ValidationError, ValueError):
-            return False
+            return None
         if not result.about_title:
-            return False
-        self.store.set(f"title:{session['id']}", json.dumps({"text": result.text or current["text"], "scale": result.scale},
-                                                            ensure_ascii=False))
-        campaign = self.campaigns[session["campaign"]]
+            return None
+        style = result.model_dump(exclude={"about_title", "caption_instruction"})
+        style["text"] = style["text"] or current["text"]
+        self.store.set(f"title:{session['id']}", json.dumps(style, ensure_ascii=False))
         background = campaign.palette.get("background", "#FFFFFF")
         try:
             picture = await self.titled(session, Image.open(raw).convert("RGB"))
         except ValueError as exc:
             await self.telegram.send(f"Couldn't redo the title: {exc}")
-            return True
+            return ""
         picture.save(session["image_path"])
         fit(Path(session["image_path"]), tuple(campaign.story_size), background).save(session["story_path"])
-        await self.show(session)
-        return True
+        if not result.caption_instruction.strip():
+            await self.show(session)
+        return result.caption_instruction.strip()
 
     async def show(self, session):
         text = session["caption"] + "\n\n" + LINE
@@ -551,9 +584,11 @@ class DailyFlow:
                 return await self.start_one(session)
             await self.telegram.send('Reply "retry" to write this prompt again.')
             return
-        if (session["state"] == "awaiting_approval" and self.typed_title(session) and TITLE_HINTS.search(instruction)
-                and await self.retitle(session, instruction)):
-            return
+        if session["state"] == "awaiting_approval" and self.typed_title(session):
+            rest = await self.retitle(session, instruction)
+            if rest == "":
+                return
+            instruction = rest or instruction
         campaign = self.campaigns[session["campaign"]]
         copy = Copy.model_validate_json(session["copy"])
         system = (campaign.brand_prompt + "\n\nYou are editing ONE social media caption. Apply the owner's instruction exactly and change "
