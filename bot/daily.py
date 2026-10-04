@@ -118,9 +118,10 @@ def clean_caption(campaign, caption, language=None, educational=False, footer_to
     for disclaimer in disclaimers(campaign).values():
         text = text.replace(disclaimer, "")
     footer = campaign.caption_footer.strip() if footer_too else ""
-    if footer:
-        for line in footer.splitlines():
-            text = text.replace(line, "")
+    # Drop any contact lines the AI or an edit wrote; the official block is added once below.
+    markers = tuple(line.split()[0] for line in campaign.caption_footer.strip().splitlines() if line.split())
+    if markers:
+        text = "\n".join(line for line in text.splitlines() if not line.strip().startswith(markers))
     wanted = disclaimers(campaign).get(language or "", "") if educational else ""
     if wanted:
         text = text.rstrip() + "\n\n" + wanted
@@ -478,7 +479,9 @@ class DailyFlow:
                   "nothing else. Keep the brand and medical rules above. Never include a doctor's name, credentials or "
                   "'Explained by' attribution in the caption. Do not write any disclaimer; it is added automatically. "
                   f"Write the caption in {LANGUAGES[copy.language]}, the same language as the post. Put hashtags only in "
-                  f"the hashtags list (max {campaign.hashtag_rules['max_count']}), never inside the caption text.")
+                  f"the hashtags list (max {campaign.hashtag_rules['max_count']}), never inside the caption text. "
+                  "If the owner gives you text to add, include ALL of it exactly as written, every line, without shortening. "
+                  "The clinic contact block (address, phone, email, website, YouTube, WhatsApp) is added automatically at the end.")
         prompt = json.dumps({"current_caption": copy.caption, "current_hashtags": copy.hashtags, "post_headline": copy.headline,
                              "owner_instruction": instruction}, ensure_ascii=False)
         reasons = []

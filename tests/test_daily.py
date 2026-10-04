@@ -454,3 +454,13 @@ def test_old_sessions_table_is_migrated(tmp_path):
     conn.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at,kind) VALUES('b','c','2026-10-04','x','x','x','own')")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at) VALUES('d','c','2026-10-04','x','x','x')")
+
+
+def test_partial_contact_lines_are_replaced_by_the_full_block():
+    aac = load_config()[1]["allergy-asthma-centre"]
+    text = "Dust mites matter.\n\n🏥 Allergy & Asthma Centre – Colombo\n📍 107 Vijaya Kumarathunga Mawatha, Colombo 00500\n📞 +94 77 371 0528"
+    cleaned = clean_caption(aac,text,"en",educational=True)
+    assert cleaned.count("📞") == 1 and cleaned.count("📍") == 1 and "Colombo 00500" not in cleaned
+    for line in aac.caption_footer.splitlines():
+        assert line in cleaned
+    assert cleaned.startswith("Dust mites matter.")
