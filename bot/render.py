@@ -50,7 +50,7 @@ FIT_SCRIPT = """() => {
 
 def font_css():
     families = {"Montserrat":"Montserrat","Inter":"Inter","Oswald":"Oswald",
-                "NotoSansSinhala":"Noto Sans Sinhala","NotoSansTamil":"Noto Sans Tamil"}
+                "NotoSansSinhala":"Noto Sans Sinhala","NotoSansTamil":"Noto Sans Tamil","AbhayaLibre":"Abhaya Libre"}
     return "\n".join(f"@font-face{{font-family:'{families[name]}';src:url('{(ROOT/'fonts'/f'{name}.ttf').as_uri()}');font-weight:100 900;}}" for name in FONTS)
 
 

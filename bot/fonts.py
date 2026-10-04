@@ -10,6 +10,7 @@ FONTS = {
     "Oswald": "oswald/Oswald[wght].ttf",
     "NotoSansSinhala": "notosanssinhala/NotoSansSinhala[wdth,wght].ttf",
     "NotoSansTamil": "notosanstamil/NotoSansTamil[wdth,wght].ttf",
+    "AbhayaLibre": "abhayalibre/AbhayaLibre-ExtraBold.ttf",
 }
 
 
