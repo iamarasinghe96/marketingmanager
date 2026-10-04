@@ -605,7 +605,7 @@ class DailyFlow:
         for _ in range(2):
             try:
                 result = await self.text.json(system, prompt, CaptionEdit)
-                updated = copy.model_copy(update={"caption": clean_caption(campaign, result.caption), "hashtags": result.hashtags})
+                updated = copy.model_copy(update={"caption": clean_caption(campaign, result.caption, footer_too=False), "hashtags": result.hashtags})
                 Copy.model_validate(updated.model_dump())
             except (ValidationError, ValueError) as exc:
                 reasons = [str(exc)[:200]]

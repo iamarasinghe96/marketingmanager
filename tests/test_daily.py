@@ -1,3 +1,4 @@
+from bot.models import Copy
 from datetime import datetime,timezone,timedelta
 from unittest.mock import AsyncMock
 import pytest
@@ -103,6 +104,8 @@ async def test_image_edit_approve_publishes_post_and_story(app,monkeypatch,tmp_p
     english = app.campaigns["allergy-asthma-centre"].required_footer_rules["disclaimers"]["en"]
     footer = app.campaigns["allergy-asthma-centre"].caption_footer
     assert session["caption"] == "Short and clear.\n\n" + english + "\n\n" + footer + "\n\n#Asthma"
+    # The medical check sees the edited text only; the contact links are added after it.
+    assert "wa.me" not in Copy.model_validate_json(session["copy"]).caption
     await app.daily.on_text({"message_id":4,"text":"approve"})
     session = app.daily.session(session["id"])
     assert session["state"] == "published"
