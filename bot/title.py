@@ -30,7 +30,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><style>
 {fonts}
 html,body{{margin:0;background:transparent}}
 #t{{width:{width}px;box-sizing:border-box;font-family:'{family}';font-weight:800;color:{color};line-height:1.3;
-   padding:0.32em 0 0.18em 0;white-space:normal;word-break:keep-all;overflow-wrap:normal;font-size:{start}px}}
+   padding:0.32em 0 0.18em 0;white-space:pre-line;word-break:keep-all;overflow-wrap:normal;font-size:{start}px}}
 </style></head><body><div id="t">{text}</div>
 <script>
 // Largest size where the title fits the box, wrapping only between words.
@@ -83,9 +83,9 @@ def calm_box(image, box):
 
 async def render_title(text, language, color, width, height):
     """Return a transparent PNG (PIL image) of the title wrapped by words to fit width×height."""
-    words = " ".join(text.split())
+    words = "\n".join(" ".join(line.split()) for line in text.replace("\\n", "\n").splitlines() if line.strip())
     page_html = PAGE.format(fonts=embedded_font(language), family=FAMILIES[language], color=color, width=width, height=height,
-                            start=min(150, height), text=html.escape(words))
+                            start=min(260, height), text=html.escape(words))
     async with rendering_browser() as browser:
         page = await browser.new_page(viewport={"width": width, "height": max(height, 200)}, device_scale_factor=2)
         await page.set_content(page_html)
@@ -101,10 +101,13 @@ async def render_title(text, language, color, width, height):
     return image.resize((max(1, image.width // 2), max(1, image.height // 2)), Image.Resampling.LANCZOS)
 
 
-async def add_title(base, text, language, color, box):
+async def add_title(base, text, language, color, box, scale=1.0):
     """Paste the rendered title into the plain part of box=(x, y, w, h) fractions, top-left aligned."""
     pixels = tuple(round(v * base.size[i % 2]) for i, v in enumerate(box))
     x, y, w, h = calm_box(base, pixels)
+    # "Bigger" grows the box (staying inside the image); "smaller" shrinks it.
+    w = max(60, min(round(w * scale), base.size[0] - x - 20))
+    h = max(40, min(round(h * scale), base.size[1] - y - 20))
     title = await render_title(text, language, color, w, h)
     canvas = base.convert("RGBA")
     canvas.alpha_composite(title, (x, y))

@@ -73,6 +73,16 @@ class WhichCampaign(BaseModel):
 OWN_HINTS = re.compile(r"\b(own|new post|inspiration|my post|post this|extra post)\b", re.I)
 
 
+TITLE_HINTS = re.compile(r"\b(font|title|heading|headline|bigger|smaller|larger|size|line ?breaks?|break|wrap|lines?)\b", re.I)
+
+
+class TitleEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    about_title: bool
+    scale: float = Field(default=1.0, ge=0.4, le=2.0)
+    text: str = Field(default="", max_length=200)
+
+
 class CaptionEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     caption: str = Field(min_length=2, max_length=1700)
@@ -468,14 +478,63 @@ class DailyFlow:
         background = campaign.palette.get("background", "#FFFFFF")
         post, story = folder / "post.png", folder / "story.png"
         picture = fit(path, tuple(campaign.post_size), background)
-        copy = Copy.model_validate_json(session["copy"])
-        if campaign.title_box and copy.language in ("si", "ta") and session["kind"] == "daily":
-            from bot.title import add_title
-            picture = await add_title(picture, copy.headline, copy.language, campaign.palette.get("primary", "#0B4257"), campaign.title_box)
+        picture.save(folder / "raw.png")  # kept so the typed title can be redone later
+        self.store.set(f"title:{session['id']}", "")
+        picture = await self.titled(session, picture)
         picture.save(post)
         fit(post, tuple(campaign.story_size), background).save(story)
         session = self.update(session["id"], state="awaiting_approval", image_path=str(post), story_path=str(story), error=None)
         await self.show(session)
+
+    def typed_title(self, session):
+        campaign = self.campaigns[session["campaign"]]
+        copy = Copy.model_validate_json(session["copy"])
+        return bool(campaign.title_box and copy.language in ("si", "ta") and session["kind"] == "daily")
+
+    async def titled(self, session, picture):
+        if not self.typed_title(session):
+            return picture
+        from bot.title import add_title
+        campaign = self.campaigns[session["campaign"]]
+        copy = Copy.model_validate_json(session["copy"])
+        saved = json.loads(self.store.get(f"title:{session['id']}") or "{}")
+        return await add_title(picture, saved.get("text") or copy.headline, copy.language,
+                               campaign.palette.get("primary", "#0B4257"), campaign.title_box, saved.get("scale", 1.0))
+
+    async def retitle(self, session, instruction):
+        """Redo the typed title on the original picture (size / line breaks); caption untouched.
+        Returns False when the instruction is not about the title."""
+        raw = Path(session["image_path"]).with_name("raw.png")
+        if not raw.is_file():
+            return False
+        copy = Copy.model_validate_json(session["copy"])
+        saved = json.loads(self.store.get(f"title:{session['id']}") or "{}")
+        current = {"text": saved.get("text") or copy.headline, "scale": saved.get("scale", 1.0)}
+        system = ("The owner is reviewing a social media image with a typed title. Decide if their message is about the "
+                  "TITLE ON THE IMAGE (font size, line breaks, wording of the title) rather than the caption. "
+                  "If so, return about_title=true, the new scale (1.0 = current size; 'bigger' about x1.3 of the current scale, "
+                  "'smaller' about x0.75; range 0.4-2.0) and the title text with line breaks as \\n where the owner wants them. "
+                  "Keep the title words exactly unless the owner asks to change them. Otherwise about_title=false.")
+        try:
+            result = await self.text.json(system, json.dumps({"current_title": current, "owner_message": instruction},
+                                                             ensure_ascii=False), TitleEdit, task="checking")
+        except (ValidationError, ValueError):
+            return False
+        if not result.about_title:
+            return False
+        self.store.set(f"title:{session['id']}", json.dumps({"text": result.text or current["text"], "scale": result.scale},
+                                                            ensure_ascii=False))
+        campaign = self.campaigns[session["campaign"]]
+        background = campaign.palette.get("background", "#FFFFFF")
+        try:
+            picture = await self.titled(session, Image.open(raw).convert("RGB"))
+        except ValueError as exc:
+            await self.telegram.send(f"Couldn't redo the title: {exc}")
+            return True
+        picture.save(session["image_path"])
+        fit(Path(session["image_path"]), tuple(campaign.story_size), background).save(session["story_path"])
+        await self.show(session)
+        return True
 
     async def show(self, session):
         text = session["caption"] + "\n\n" + LINE
@@ -491,6 +550,9 @@ class DailyFlow:
                 self.store.execute("DELETE FROM sessions WHERE id=?", (session["id"],))
                 return await self.start_one(session)
             await self.telegram.send('Reply "retry" to write this prompt again.')
+            return
+        if (session["state"] == "awaiting_approval" and self.typed_title(session) and TITLE_HINTS.search(instruction)
+                and await self.retitle(session, instruction)):
             return
         campaign = self.campaigns[session["campaign"]]
         copy = Copy.model_validate_json(session["copy"])

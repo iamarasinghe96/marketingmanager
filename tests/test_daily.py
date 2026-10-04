@@ -372,7 +372,7 @@ async def test_sinhala_day_types_the_title_onto_the_image(app,monkeypatch,tmp_pa
     si = sample(aac,"si").model_copy(update={"caption":"ඇදුම රෝගය පිළිබඳ දැනුවත් වීම."})
     app.text.write = AsyncMock(return_value=si)
     calls = []
-    async def fake_add_title(picture,text,language,color,box):
+    async def fake_add_title(picture,text,language,color,box, scale=1.0):
         calls.append((text,language,color,box))
         return picture
     monkeypatch.setattr("bot.title.add_title",fake_add_title)
