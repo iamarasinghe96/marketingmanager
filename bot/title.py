@@ -3,14 +3,28 @@
 AI image tools break Sinhala and Tamil letters, so on those days ChatGPT leaves the title area
 empty and the bot renders the title here (Chromium shapes the script correctly), then pastes it in.
 """
+import base64
 import html
 import io
 
 from PIL import Image, ImageFilter
 
-from bot.render import font_css, rendering_browser
+from bot.config import ROOT
+from bot.render import rendering_browser
 
 FAMILIES = {"si": "Abhaya Libre", "ta": "Noto Sans Tamil"}
+FILES = {"si": "AbhayaLibre.ttf", "ta": "NotoSansTamil.ttf"}
+
+
+def embedded_font(language):
+    """The font travels inside the page itself: browsers may refuse file:// fonts and silently
+    fall back to a system font (which is what produced the wrong Sinhala look)."""
+    path = ROOT / "fonts" / FILES[language]
+    if not path.is_file():
+        raise ValueError(f"Font file missing: {path.name}. Run update.bat (it downloads the fonts).")
+    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    return (f"@font-face{{font-family:'{FAMILIES[language]}';src:url(data:font/ttf;base64,{data}) format('truetype');"
+            "font-weight:100 900;}}")
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><style>
 {fonts}
@@ -70,13 +84,16 @@ def calm_box(image, box):
 async def render_title(text, language, color, width, height):
     """Return a transparent PNG (PIL image) of the title wrapped by words to fit width×height."""
     words = " ".join(text.split())
-    page_html = PAGE.format(fonts=font_css(), family=FAMILIES[language], color=color, width=width, height=height,
+    page_html = PAGE.format(fonts=embedded_font(language), family=FAMILIES[language], color=color, width=width, height=height,
                             start=min(150, height), text=html.escape(words))
     async with rendering_browser() as browser:
         page = await browser.new_page(viewport={"width": width, "height": max(height, 200)}, device_scale_factor=2)
         await page.set_content(page_html)
         await page.evaluate("document.fonts.ready")
         await page.wait_for_timeout(100)
+        loaded = await page.evaluate(f"document.fonts.check(\"40px '{FAMILIES[language]}'\", {words!r})")
+        if not loaded:
+            raise ValueError(f"The {FAMILIES[language]} font did not load, so the title was not added.")
         png = await page.locator("#t").screenshot(omit_background=True)
         await page.close()
     image = Image.open(io.BytesIO(png)).convert("RGBA")
