@@ -498,3 +498,12 @@ async def test_hi_tamil_picks_the_language_and_reset_clears(app,monkeypatch):
     await app.daily.on_text({"message_id":2,"text":"hi"})
     await app.command("/reset")
     assert "only works in dry run" in app.telegram.send.await_args.args[0] and app.daily.sessions(app.daily.today())
+
+
+def test_sinhala_hashtags_are_moved_whole_without_leaving_fragments():
+    from bot.models import Copy
+    aac = load_config()[1]["allergy-asthma-centre"]
+    caption = "ඇදුම පිළිබඳ දැනුවත් වන්න. 077 371 0528. #ආසාත්මිකතා #සෞඛ්‍යය #ඇදුම #Asthma"
+    copy = Copy.model_validate({**sample(aac,"si").model_dump(),"caption":caption,"hashtags":[]})
+    assert copy.caption == "ඇදුම පිළිබඳ දැනුවත් වන්න. 077 371 0528."
+    assert copy.hashtags == ["#ආසාත්මිකතා","#ඇදුම","#Asthma"]  # the joiner tag (සෞඛ්‍යය) is dropped

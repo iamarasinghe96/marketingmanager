@@ -2,6 +2,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+# Hashtag characters: letters/digits plus Sinhala and Tamil vowel signs (which \\w alone misses).
+# Joiners (ZWJ/ZWNJ) are excluded on purpose: those tags render inconsistently across platforms.
+TAG_CHARS = r"\w\u0D80-\u0DFF\u0B80-\u0BFF"
+TAG = r"#[" + TAG_CHARS + r"]+(?:[\u200c\u200d][" + TAG_CHARS + r"]+)*"
+
+
 class Copy(BaseModel):
     model_config = ConfigDict(extra="forbid")
     category: Literal["MARKETING", "EDUCATIONAL", "INSTITUTIONAL"]
@@ -28,8 +34,8 @@ class Copy(BaseModel):
         """Models often put hashtags inside the caption; move them to the hashtag list."""
         import re
         if isinstance(data, dict) and isinstance(data.get("caption"), str) and "#" in data["caption"]:
-            found = re.findall(r"#\w+", data["caption"], re.UNICODE)
-            data = {**data, "caption": re.sub(r"[ \t]*#\w+", "", data["caption"], flags=re.UNICODE).strip(),
+            found = re.findall(TAG, data["caption"])
+            data = {**data, "caption": re.sub(r"[ \t]*" + TAG, "", data["caption"]).strip(),
                     "hashtags": list(data.get("hashtags") or []) + found}
         return data
 
@@ -55,8 +61,8 @@ class Copy(BaseModel):
             tag = str(tag).strip()
             if not tag or re.search(r"[\u200c\u200d]", tag):
                 continue
-            tag = "#" + re.sub(r"[^\w]", "", tag.lstrip("#"), flags=re.UNICODE)
-            if re.fullmatch(r"#\w+", tag, re.UNICODE):
+            tag = "#" + re.sub(r"[^" + TAG_CHARS + "]", "", tag.lstrip("#"))
+            if re.fullmatch(TAG, tag):
                 tags.append(tag)
         return list(dict.fromkeys(tags))
 
