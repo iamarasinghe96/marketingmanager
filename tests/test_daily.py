@@ -563,3 +563,16 @@ async def test_photo_note_is_applied_and_unknown_reply_is_not_an_own_post(app,mo
     await app.daily.on_photo({"message_id":3,"reply_to_message":{"message_id":999}},image(tmp_path))
     app.daily.own.assert_not_called()
     assert "can't find the post" in app.telegram.send.await_args.args[0]
+
+
+async def test_reply_to_lost_post_edits_nothing_and_cancel_discards(app,monkeypatch,tmp_path):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    await app.daily.on_photo({"message_id":2},image(tmp_path))
+    session = app.daily.sessions(app.daily.today())[0]
+    app.daily.edit = AsyncMock()
+    await app.daily.on_text({"message_id":3,"text":"middle align සහ","reply_to_message":{"message_id":999}})
+    app.daily.edit.assert_not_called()
+    assert "can't find the post" in app.telegram.send.await_args.args[0]
+    await app.daily.on_text({"message_id":4,"text":"cancel"})
+    assert app.daily.session(session["id"])["state"] == "discarded"

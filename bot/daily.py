@@ -118,6 +118,15 @@ def is_new_prompt(text):
     return text.casefold().strip(" .!") in {"retry", "try again", "again", "redo", "new prompt", "new one", "another one", "different topic"}
 
 
+def is_cancel(text):
+    return text.casefold().strip(" .!") in {"cancel", "discard", "delete", "delete this", "cancel this", "drop it",
+                                            "don't post", "dont post", "do not post", "scrap it", "skip"}
+
+
+LOST = ("I can't find the post you replied to any more (it was cleared before posts could be recovered). "
+        "Send \"hi\" to start again.")
+
+
 def is_approval(text):
     return text.casefold().strip(" .!") in {"approve", "approved", "ok", "okay", "👍", "yes", "post it", "post"}
 
@@ -316,6 +325,10 @@ class DailyFlow:
         if lowered.startswith(("hi ", "hi,", "hello ", "hello,")):
             return await self.start(day, idea=re.sub(r"^(hi|hello)[\s,!.]*", "", text, flags=re.I))
         replied = self.replied_session(message, day)
+        if not replied and message.get("reply_to_message"):
+            # Never let a reply to a lost post edit some other post by mistake.
+            await self.telegram.send(LOST)
+            return
         if not replied and not is_approval(text) and not is_new_prompt(text) and await self.understand(day, text):
             return
         session = replied or await self.pick(day, ("awaiting_approval", "awaiting_image", "failed"), {"text": text})
@@ -333,6 +346,13 @@ class DailyFlow:
         await self.act(session, text)
 
     async def act(self, session, text):
+        if is_cancel(text):
+            if session["state"] in ("published", "publishing"):
+                await self.telegram.send("That post is already published.")
+                return
+            self.update(session["id"], state="discarded")
+            await self.telegram.send(f"{self.campaigns[session['campaign']].name}: cancelled, nothing will be posted.")
+            return
         if is_approval(text):
             if session["state"] == "awaiting_image":
                 await self.telegram.send(f"{self.campaigns[session['campaign']].name}: send me the finished image first.")
@@ -351,9 +371,8 @@ class DailyFlow:
         caption = message.get("caption", "").strip()
         if not session and message.get("reply_to_message") and not OWN_HINTS.search(caption):
             # Replying to one of my old messages: never turn it into a brand-new own post by mistake.
-            await self.telegram.send("I can't find the post you replied to any more (it was cleared before posts could "
-                                     "be recovered). Send \"hi\" to start again, then send this image. "
-                                     "To post it as your own finished post instead, send it again with \"own post\".")
+            await self.telegram.send(LOST + " Then send this image. To post it as your own finished post "
+                                     "instead, send it again with \"own post\".")
             return
         if not session:
             slug = detect_campaign(caption, self.campaigns) if caption else None
@@ -415,6 +434,9 @@ class DailyFlow:
 
     # ---- steps ------------------------------------------------------------------------
     async def start(self, day, idea="", language=None, target=None):
+        # A cancelled post doesn't count: "hi" can start it again.
+        for old in self.sessions(day, ("discarded",), kind="daily"):
+            self.store.execute("DELETE FROM sessions WHERE id=?", (old["id"],))
         existing = self.sessions(day, kind="daily")
         if existing:
             unfinished = [s for s in existing if s["state"] in OPEN]
