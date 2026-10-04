@@ -101,7 +101,8 @@ async def test_image_edit_approve_publishes_post_and_story(app,monkeypatch,tmp_p
     await app.daily.on_text({"message_id":3,"text":"make it shorter"})
     session = app.daily.session(session["id"])
     english = app.campaigns["allergy-asthma-centre"].required_footer_rules["disclaimers"]["en"]
-    assert session["caption"] == "Short and clear.\n\n" + english + "\n\n#Asthma"
+    footer = app.campaigns["allergy-asthma-centre"].caption_footer
+    assert session["caption"] == "Short and clear.\n\n" + english + "\n\n" + footer + "\n\n#Asthma"
     await app.daily.on_text({"message_id":4,"text":"approve"})
     session = app.daily.session(session["id"])
     assert session["state"] == "published"
@@ -177,12 +178,12 @@ async def test_wrong_language_caption_is_rewritten(app,monkeypatch):
     good = sample(aac,"si").model_copy(update={"caption":"ඇදුම රෝගය පිළිබඳ දැනුවත් වීම."})
     bad = good.model_copy(update={"caption":"Understanding asthma."})
     app.text.write = AsyncMock(side_effect=[bad,good])
-    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    at(monkeypatch,"2026-10-06T03:00:00+00:00")  # a Sinhala day
     await app.daily.on_text({"message_id":1,"text":"hi"})
     assert app.text.write.await_count == 2
     assert "Sinhala" in app.text.write.await_args_list[1].args[6]
     session = app.daily.sessions(app.daily.today())[0]
-    assert session["caption"].endswith(aac.required_footer_rules["disclaimers"]["si"])
+    assert session["caption"].endswith(aac.required_footer_rules["disclaimers"]["si"] + "\n\n" + aac.caption_footer)
 
 
 def test_fit_pads_without_cropping(tmp_path):
@@ -365,3 +366,16 @@ def test_sinhala_prompt_gets_accuracy_rules_and_exact_text():
     assert "TEXT ACCURACY" not in en and "TEXT TO RENDER" not in en
     ta = filled_prompt(aac,{"copy":sample(aac,"ta").model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
     assert "TAMIL TEXT ACCURACY" in ta
+
+
+async def test_english_headline_on_a_sinhala_day_is_rewritten(app,monkeypatch):
+    aac = app.campaigns["allergy-asthma-centre"]
+    good = sample(aac,"si").model_copy(update={"caption":"ඇදුම රෝගය පිළිබඳ දැනුවත් වීම."})
+    mixed = good.model_copy(update={"headline":"Asthma Triggers","supporting":"Identifying triggers matters."})
+    app.text.write = AsyncMock(side_effect=[mixed,good])
+    at(monkeypatch,"2026-10-06T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    assert app.text.write.await_count == 2
+    assert "on-image text must be written in Sinhala" in app.text.write.await_args_list[1].args[6]
+    caption = app.daily.sessions(app.daily.today())[0]["caption"]
+    assert caption.index("📞 +94 77 371 0528") < caption.index("#") if "#" in caption else "📞 +94 77 371 0528" in caption

@@ -29,6 +29,15 @@ reference_posts: ['assets/allergy-asthma-centre/past-posts/*.png']
 phone: '077 371 0528'
 address: 107 Vijaya Kumarathunga Mawatha, Colombo 5
 website: ''
+# Added to the end of every caption, just before the hashtags (same in every language).
+caption_footer: |-
+  🏥 Allergy & Asthma Center - Colombo
+  📍 107 Vijaya Kumarathunga Mawatha, Colombo 5
+  📞 +94 77 371 0528
+  📧 allergy.asthmacenter.colombo@gmail.com
+  🌐 https://allergyandasthma.github.io/home/
+  🎥 https://www.youtube.com/@AllergyAsthmaCenter
+  📲 https://wa.me/94773710528
 content_mix: {education: 7, institutional: 2, news: 1}
 rss_queries: ['asthma allergy air quality Sri Lanka', 'pollen Colombo']
 hashtag_rules: {max_count: 12, caption_only: true}

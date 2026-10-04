@@ -76,16 +76,22 @@ def disclaimers(campaign):
     return found
 
 
-def clean_caption(campaign, caption, language=None, educational=False):
+def clean_caption(campaign, caption, language=None, educational=False, footer_too=True):
     """No doctor attribution; exactly one disclaimer (in the post's language) on educational posts."""
     lines = [line for line in caption.splitlines()
              if not any(marker in line.casefold() for marker in ATTRIBUTION_MARKERS)]
     text = "\n".join(lines)
     for disclaimer in disclaimers(campaign).values():
         text = text.replace(disclaimer, "")
+    footer = campaign.caption_footer.strip() if footer_too else ""
+    if footer:
+        for line in footer.splitlines():
+            text = text.replace(line, "")
     wanted = disclaimers(campaign).get(language or "", "") if educational else ""
     if wanted:
         text = text.rstrip() + "\n\n" + wanted
+    if footer:
+        text = text.rstrip() + "\n\n" + footer
     text = re.sub(r"[ \t]+\n", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
@@ -325,7 +331,12 @@ class DailyFlow:
             if campaign.style == "clinic" and copy.url:
                 copy = copy.model_copy(update={"url": ""})
             reasons = list(await check(campaign, copy, self.text))
-            if not caption_language_ok(clean_caption(campaign, copy.caption), copy.language):
+            on_image = " ".join([copy.headline, copy.supporting, copy.body, *copy.items])
+            if copy.language != language:
+                reasons.append(f"Today's post must be in {LANGUAGES[language]}; set language to '{language}'")
+            if not caption_language_ok(on_image, copy.language):
+                reasons.append(f"The headline and all on-image text must be written in {LANGUAGES[copy.language]}")
+            if not caption_language_ok(clean_caption(campaign, copy.caption, footer_too=False), copy.language):
                 reasons.append(f"The caption must be written in {LANGUAGES[copy.language]}, the same language as the post")
             if not reasons:
                 return copy
