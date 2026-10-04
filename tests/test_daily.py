@@ -354,18 +354,36 @@ def test_hashtags_in_caption_are_moved_and_contact_allowed():
     assert "Educational copy contains booking promotion" in deterministic_check(aac,pitch)
 
 
-def test_sinhala_prompt_gets_accuracy_rules_and_exact_text():
+def test_sinhala_clinic_prompt_leaves_an_empty_title_area():
     from bot.bundles import filled_prompt
     aac = load_config()[1]["allergy-asthma-centre"]
     si = sample(aac,"si")
     prompt = filled_prompt(aac,{"copy":si.model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
-    assert "SINHALA TEXT ACCURACY" in prompt and prompt.index("SINHALA TEXT ACCURACY") < prompt.index("\nCAMPAIGN INPUT\n")
-    tail = prompt.split("TEXT TO RENDER - copy each line exactly")[1]
-    assert si.headline in tail and si.supporting in tail
+    assert "TITLE AREA (critical)" in prompt and "from 6% to 64% of the width and from 22% to 52%" in prompt
+    assert si.headline not in prompt and "SINHALA TEXT ACCURACY" not in prompt
     en = filled_prompt(aac,{"copy":sample(aac,"en").model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
-    assert "TEXT ACCURACY" not in en and "TEXT TO RENDER" not in en
+    assert "TITLE AREA" not in en and "HEADLINE:\nUnderstanding" in en
     ta = filled_prompt(aac,{"copy":sample(aac,"ta").model_dump_json(),"kind":"post","idea":"","reference_instructions":""},[])
-    assert "TAMIL TEXT ACCURACY" in ta
+    assert "TITLE AREA" in ta and "Tamil" in ta.split("TITLE AREA")[1][:120]
+
+
+async def test_sinhala_day_types_the_title_onto_the_image(app,monkeypatch,tmp_path):
+    aac = app.campaigns["allergy-asthma-centre"]
+    si = sample(aac,"si").model_copy(update={"caption":"ඇදුම රෝගය පිළිබඳ දැනුවත් වීම."})
+    app.text.write = AsyncMock(return_value=si)
+    calls = []
+    async def fake_add_title(picture,text,language,color,box):
+        calls.append((text,language,color,box))
+        return picture
+    monkeypatch.setattr("bot.title.add_title",fake_add_title)
+    at(monkeypatch,"2026-10-06T03:00:00+00:00")  # a Sinhala day
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    session = app.daily.sessions(app.daily.today())[0]
+    copy = __import__("bot.models",fromlist=["Copy"]).Copy.model_validate_json(session["copy"])
+    assert copy.supporting == "" and copy.items == []  # title only on the image
+    assert "type the title in" in app.telegram.document.await_args_list[0].kwargs["caption"]
+    await app.daily.on_photo({"message_id":2},image(tmp_path))
+    assert calls == [(si.headline,"si",aac.palette["primary"],aac.title_box)]
 
 
 async def test_english_headline_on_a_sinhala_day_is_rewritten(app,monkeypatch):

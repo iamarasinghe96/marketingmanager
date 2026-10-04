@@ -43,7 +43,9 @@ def filled_prompt(campaign, draft, references):
     directions = draft.get("reference_instructions")
     reference_rules = reference_requirements(campaign, references, directions if directions is not None else style_instructions(draft["idea"]))
     special = "\n\n".join(x for x in (special, reference_rules) if x) or "NONE"
-    common = {"CAMPAIGN PURPOSE": copy.purpose or copy.topic, "HEADLINE": copy.headline,
+    typed_title = bool(campaign.title_box) and copy.language in ("si", "ta")
+    common = {"CAMPAIGN PURPOSE": copy.purpose or copy.topic,
+              "HEADLINE": "NONE - leave the empty title area described at the top (the clinic adds the title)" if typed_title else copy.headline,
               "CTA": copy.cta or "NONE", "PRIMARY VISUAL": copy.visual_brief, "SPECIAL REQUIREMENTS": special}
     if campaign.style == "lushnote":
         values = {**common, "SUPPORTING COPY": copy.supporting or "NONE", "URL": copy.url or campaign.website or "NONE"}
@@ -99,7 +101,14 @@ def filled_prompt(campaign, draft, references):
                      "NO icons, NO icon circles or coloured badges, NO icon grid, NO infographic, NO sparkles, NO glossy effects, "
                      "NO stock-photo person smiling at the sky. Do not add list items, labels or text beyond the CAMPAIGN INPUT. "
                      "Generous empty space; when unsure, remove elements.\n\n")
-    if copy.language in SCRIPT_RULES:
+    if typed_title:
+        x, y, w, h = (round(v * 100) for v in campaign.title_box)
+        override += (f"TITLE AREA (critical): write NO title, heading, paragraph or any {'Sinhala' if copy.language == 'si' else 'Tamil'} "
+                     f"or English text on this design. Keep a clear, plain, light (near-white) EMPTY area from {x}% to {x + w}% of the width "
+                     f"and from {y}% to {y + h}% of the height: no text, objects, shapes, gradients or busy photo detail inside it. "
+                     "The clinic adds the title there afterwards with its own font. Place the logo at the top-left above this area, "
+                     "the visual on the other side, and the phone/address band at the bottom as usual.\n\n")
+    elif copy.language in SCRIPT_RULES:
         override += SCRIPT_RULES[copy.language] + "\n\n"
         exact = [line for line in [copy.headline, copy.supporting, copy.body, *copy.items, copy.cta] if line]
         brand += ("\n\nTEXT TO RENDER - copy each line exactly, letter by letter, and add no other " +

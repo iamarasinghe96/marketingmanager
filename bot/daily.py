@@ -379,6 +379,9 @@ class DailyFlow:
             copy = await self.text.write(campaign, day, history, idea, context, None, correction)
             if campaign.style == "clinic" and copy.url:
                 copy = copy.model_copy(update={"url": ""})
+            if campaign.title_box and copy.language in ("si", "ta"):
+                # Title only on the image; the explanation lives in the caption.
+                copy = copy.model_copy(update={"supporting": "", "body": "", "items": []})
             reasons = list(await check(campaign, copy, self.text))
             on_image = " ".join([copy.headline, copy.supporting, copy.body, *copy.items])
             if copy.language != language:
@@ -427,6 +430,8 @@ class DailyFlow:
         assets = self.assets(campaign, copy)
         attach = ("Attach: " + ", ".join(name for _, name in assets) + ".") if assets else "No attachments needed."
         label = {"MARKETING": "", "EDUCATIONAL": " (educational)", "INSTITUTIONAL": " (institutional)"}[copy.category]
+        if campaign.title_box and copy.language in ("si", "ta"):
+            attach += f" ChatGPT leaves the title space empty; I'll type the title in for you: {copy.headline}"
         note = " ⚠ The AI medical check couldn't run today, so please review the wording carefully." if getattr(self, "unchecked", False) else ""
         message = await self.telegram.document(prompt, caption=f"{campaign.name}{label} – today's prompt. {attach} Send me the finished image when ready.{note}")
         self.remember(message, session)
@@ -453,8 +458,13 @@ class DailyFlow:
         folder.mkdir(parents=True, exist_ok=True)
         background = campaign.palette.get("background", "#FFFFFF")
         post, story = folder / "post.png", folder / "story.png"
-        fit(path, tuple(campaign.post_size), background).save(post)
-        fit(path, tuple(campaign.story_size), background).save(story)
+        picture = fit(path, tuple(campaign.post_size), background)
+        copy = Copy.model_validate_json(session["copy"])
+        if campaign.title_box and copy.language in ("si", "ta") and session["kind"] == "daily":
+            from bot.title import add_title
+            picture = await add_title(picture, copy.headline, copy.language, campaign.palette.get("primary", "#0B4257"), campaign.title_box)
+        picture.save(post)
+        fit(post, tuple(campaign.story_size), background).save(story)
         session = self.update(session["id"], state="awaiting_approval", image_path=str(post), story_path=str(story), error=None)
         await self.show(session)
 

@@ -29,6 +29,9 @@ reference_posts: ['assets/allergy-asthma-centre/past-posts/*.png']
 phone: '077 371 0528'
 address: 107 Vijaya Kumarathunga Mawatha, Colombo 5
 website: ''
+# On Sinhala/Tamil posts ChatGPT leaves this area empty and the bot types the title in with a real font
+# (x, y, width, height as fractions of the post).
+title_box: [0.06, 0.22, 0.58, 0.30]
 # Added to the end of every caption, just before the hashtags (same in every language).
 caption_footer: |-
   🏥 Allergy & Asthma Center - Colombo
