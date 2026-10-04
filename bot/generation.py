@@ -118,6 +118,7 @@ class TextClient:
             system += ("This post is in Sinhala/Tamil: the ONLY text on the image is the headline (at most 6 words), typed in later "
                        "with a real font. Leave supporting, body and items empty; put the full explanation in the caption. ")
         if campaign.style == "clinic":
+            system += "Always write the clinic's name in English exactly as 'Allergy & Asthma Center', even inside Sinhala or Tamil text; never translate or transliterate it. "
             system += ("NO PEOPLE in the visual: no faces, bodies or hands. Choose nature (plants, flowers, pollen, trees, sky, "
                        "leaves), animals or everyday objects; one soft natural photograph is preferred. ")
         system += "For AAC, supporting is SUBHEAD; body is the optional short BODY; items is LIST. Use the requested type and native language when supplied. "

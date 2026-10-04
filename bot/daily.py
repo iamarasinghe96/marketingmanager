@@ -497,7 +497,8 @@ class DailyFlow:
                   f"Write the caption in {LANGUAGES[copy.language]}, the same language as the post. Put hashtags only in "
                   f"the hashtags list (max {campaign.hashtag_rules['max_count']}), never inside the caption text. "
                   "If the owner gives you text to add, include ALL of it exactly as written, every line, without shortening. "
-                  "The clinic contact block (address, phone, email, website, YouTube, WhatsApp) is added automatically at the end.")
+                  "The clinic contact block (address, phone, email, website, YouTube, WhatsApp) is added automatically at the end. "
+                  "Always write the clinic's name in English exactly as 'Allergy & Asthma Center', even inside Sinhala or Tamil text; never translate or transliterate it. ")
         prompt = json.dumps({"current_caption": copy.caption, "current_hashtags": copy.hashtags, "post_headline": copy.headline,
                              "owner_instruction": instruction}, ensure_ascii=False)
         reasons = []
@@ -638,7 +639,8 @@ class DailyFlow:
                   "text on the image. No doctor name, credentials or attribution, and no disclaimer or contact details in the "
                   "caption (both are added automatically). Hashtags go only in the hashtags list. "
                   "category: MARKETING for LushNote; EDUCATIONAL or INSTITUTIONAL for the clinic. "
-                  "headline: the main headline exactly as printed on the image.")
+                  "headline: the main headline exactly as printed on the image. "
+                  "Always write the clinic's name in English exactly as 'Allergy & Asthma Center', even inside Sinhala or Tamil text; never translate or transliterate it. ")
         prompt = json.dumps({"owner_note": note or "none"}, ensure_ascii=False)
         reasons = []
         for _ in range(2):
