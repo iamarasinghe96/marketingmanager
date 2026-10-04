@@ -348,8 +348,14 @@ class DailyFlow:
         day = self.today()
         self.store.set("last_owner_message", utcnow().isoformat())
         session = self.replied_session(message, day)
+        caption = message.get("caption", "").strip()
+        if not session and message.get("reply_to_message") and not OWN_HINTS.search(caption):
+            # Replying to one of my old messages: never turn it into a brand-new own post by mistake.
+            await self.telegram.send("I can't find the post you replied to any more (it was cleared before posts could "
+                                     "be recovered). Send \"hi\" to start again, then send this image. "
+                                     "To post it as your own finished post instead, send it again with \"own post\".")
+            return
         if not session:
-            caption = message.get("caption", "")
             slug = detect_campaign(caption, self.campaigns) if caption else None
             # A new image while a post is waiting for its image OR for approval replaces that post's
             # picture (caption kept); "own post" in the photo caption makes it a separate post.
@@ -364,6 +370,11 @@ class DailyFlow:
                 await self.choose(waiting, {"path": str(path)}, "Which post is this image for?")
                 return
         await self.attach(session, path)
+        if caption and not OWN_HINTS.search(caption):
+            # A note typed with the image ("middle align සහ") is applied as an edit straight away.
+            session = self.session(session["id"])
+            if session and session["state"] == "awaiting_approval":
+                await self.edit(session, caption)
 
     async def choose(self, sessions, payload, prompt):
         interaction = uuid.uuid4().hex[:12]

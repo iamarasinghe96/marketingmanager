@@ -550,3 +550,16 @@ async def test_post_cleared_by_update_comes_back_on_reply_or_edit(app,monkeypatc
     app.text.json = AsyncMock(return_value=CaptionEdit(caption="Short and clear.",hashtags=["#Asthma"]))
     await app.daily.on_text({"message_id":3,"text":"make it shorter"})
     assert app.daily.session(session["id"])["caption"].startswith("Short and clear.")
+
+
+async def test_photo_note_is_applied_and_unknown_reply_is_not_an_own_post(app,monkeypatch,tmp_path):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    app.text.json = AsyncMock(return_value=CaptionEdit(caption="Short and clear.",hashtags=["#Asthma"]))
+    await app.daily.on_photo({"message_id":2,"caption":"make the caption shorter"},image(tmp_path))
+    session = app.daily.sessions(app.daily.today())[0]
+    assert session["caption"].startswith("Short and clear.")
+    app.daily.own = AsyncMock()
+    await app.daily.on_photo({"message_id":3,"reply_to_message":{"message_id":999}},image(tmp_path))
+    app.daily.own.assert_not_called()
+    assert "can't find the post" in app.telegram.send.await_args.args[0]
