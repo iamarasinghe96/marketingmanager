@@ -251,6 +251,10 @@ class DailyFlow:
         if is_greeting(text):
             return await self.start(day)
         lowered = text.casefold()
+        chosen = re.fullmatch(r"(?:hi|hello)[\s,!.]+(english|sinhala|tamil|en|si|ta)[\s.!]*", lowered)
+        if chosen:
+            code = {"english": "en", "sinhala": "si", "tamil": "ta"}.get(chosen.group(1), chosen.group(1))
+            return await self.start(day, language=code)
         if lowered.startswith(("hi ", "hi,", "hello ", "hello,")):
             return await self.start(day, idea=re.sub(r"^(hi|hello)[\s,!.]*", "", text, flags=re.I))
         session = self.replied_session(message, day) or await self.pick(day, ("awaiting_approval", "awaiting_image", "failed"), {"text": text})
@@ -332,7 +336,7 @@ class DailyFlow:
             await self.act(session, payload.get("text", ""))
 
     # ---- steps ------------------------------------------------------------------------
-    async def start(self, day, idea=""):
+    async def start(self, day, idea="", language=None):
         existing = self.sessions(day, kind="daily")
         if existing:
             unfinished = [s for s in existing if s["state"] in OPEN]
@@ -356,7 +360,7 @@ class DailyFlow:
                 continue  # Another "hi" already created it.
             try:
                 own_idea = idea if idea and (not target or target == campaign.slug) else ""
-                copy = await self.write(campaign, day, own_idea)
+                copy = await self.write(campaign, day, own_idea, language)
                 caption = self.caption(campaign, copy)
                 session = self.update(session_id, state="awaiting_image", copy=copy.model_dump_json(), caption=caption)
                 self.store.execute("INSERT OR REPLACE INTO history(draft_id,campaign,day,topic,headline) VALUES(?,?,?,?,?)",
@@ -367,16 +371,18 @@ class DailyFlow:
                 self.update(session_id, state="failed", error=str(exc))
                 await self.telegram.send(f"{campaign.name}: couldn't write today's prompt ({str(exc)[:300]}). Reply \"retry\" to try again.")
 
-    async def write(self, campaign, day, idea=""):
+    async def write(self, campaign, day, idea="", language=None):
         self.unchecked = False
         correction, copy, reasons = "", None, []
         history = self.history(campaign, day)
-        language = campaign.language_rules["rotation"][day.toordinal() % len(campaign.language_rules["rotation"])]
+        supported = campaign.language_rules.get("supported", campaign.language_rules["rotation"])
+        if language not in supported:
+            language = campaign.language_rules["rotation"][day.toordinal() % len(campaign.language_rules["rotation"])]
         context = {"format": "post",
                    "caption_rules": f"Write the caption in {LANGUAGES[language]}, the SAME language as the post's headline and text. "
                                     "No doctor name, credentials or attribution. No disclaimer; it is added automatically."}
         for _ in range(3):
-            copy = await self.text.write(campaign, day, history, idea, context, None, correction)
+            copy = await self.text.write(campaign, day, history, idea, context, None, correction, language=language)
             if campaign.style == "clinic" and copy.url:
                 copy = copy.model_copy(update={"url": ""})
             if campaign.title_box and copy.language in ("si", "ta"):
@@ -681,7 +687,8 @@ HELP = """Marketing Manager – daily flow
 If something is unfinished I remind you once. Anything unfinished is dropped at midnight; nothing carries over.
 Own posts: send me any finished image you made yourself (e.g. "for the clinic" as the photo caption).
 I write the caption from the image; approve and it posts now, or tomorrow at 09:00 if that page already posted today.
-Tip: "hi, idea: <your idea>" uses your idea for today's prompt. Reply "retry" before sending the image to get a different prompt.
+Tip: "hi, idea: <your idea>" uses your idea for today's prompt. "hi sinhala" / "hi tamil" / "hi english" picks the language.
+/reset clears today's session (dry run only) so you can test again. Reply "retry" before sending the image to get a different prompt.
 
 /status · accounts and today's progress
 /pause [campaign] · /resume [campaign]

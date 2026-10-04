@@ -482,3 +482,19 @@ def test_partial_contact_lines_are_replaced_by_the_full_block():
     for line in aac.caption_footer.splitlines():
         assert line in cleaned
     assert cleaned.startswith("Dust mites matter.")
+
+
+async def test_hi_tamil_picks_the_language_and_reset_clears(app,monkeypatch):
+    aac = app.campaigns["allergy-asthma-centre"]
+    ta = sample(aac,"ta").model_copy(update={"caption":"ஆஸ்துமா பற்றிய விழிப்புணர்வு."})
+    app.text.write = AsyncMock(return_value=ta)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")  # normally an English day
+    await app.daily.on_text({"message_id":1,"text":"hi tamil"})
+    assert app.text.write.await_args.kwargs["language"] == "ta"
+    assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"
+    await app.command("/reset")
+    assert app.daily.sessions(app.daily.today()) == []
+    app.settings["dry_run"] = False
+    await app.daily.on_text({"message_id":2,"text":"hi"})
+    await app.command("/reset")
+    assert "only works in dry run" in app.telegram.send.await_args.args[0] and app.daily.sessions(app.daily.today())

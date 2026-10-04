@@ -292,6 +292,13 @@ class App:
             return
         if name in {"/start","/help"}:
             await self.telegram.send(DAILY_HELP if self.daily else HELP)
+        elif name == "/reset" and self.daily:
+            if not self.settings["dry_run"]:
+                await self.telegram.send("/reset only works in dry run (DRY_RUN=true), so nothing live is ever posted twice.")
+                return
+            day = self.daily.today().isoformat()
+            cleared = self.store.execute("DELETE FROM sessions WHERE day=?",(day,)).rowcount
+            await self.telegram.send(f"Cleared today's session ({cleared}). Send \"hi\" (or \"hi sinhala\" / \"hi tamil\") to start again.")
         elif name == "/status":
             await self.telegram.send(self.status()[:4000])
         elif name == "/campaigns":

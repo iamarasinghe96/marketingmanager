@@ -101,10 +101,10 @@ class TextClient:
                         break
         raise APIError("Text generation","Both text providers failed or returned invalid JSON. " + "; ".join(failures)[:600])
 
-    async def write(self, campaign, day, history, idea="", revision=None, previous=None, correction=""):
+    async def write(self, campaign, day, history, idea="", revision=None, previous=None, correction="", language=None):
         choices = list(campaign.content_mix)
         angle = random.choices(choices,weights=[campaign.content_mix[x] for x in choices])[0]
-        language = campaign.language_rules["rotation"][day.toordinal() % len(campaign.language_rules["rotation"]) ]
+        language = language or campaign.language_rules["rotation"][day.toordinal() % len(campaign.language_rules["rotation"]) ]
         news = await rss_news(self.client,campaign.rss_queries) if angle == "news" and not previous else []
         system = campaign.brand_prompt + "\nThe daily CAMPAIGN INPUT authorises new copywriting only within the facts below. "
         system += "No fabricated statistics, quotations, prices, product promises, medical advice, opening times or titles. "
