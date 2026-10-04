@@ -6,6 +6,7 @@ daily:
   timezone: Australia/Sydney
   greeting_time: '08:00'
   reminder_after_hours: 3
+  carryover_time: '09:00'   # own posts made on a day the page already posted go out the next day at this time
 database: data/marketing.sqlite3
 poll_seconds: 15
 summary_timezone: Australia/Sydney

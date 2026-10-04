@@ -28,15 +28,49 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions(
  id TEXT PRIMARY KEY, campaign TEXT NOT NULL, day TEXT NOT NULL, state TEXT NOT NULL,
  copy TEXT, caption TEXT, image_path TEXT, story_path TEXT, error TEXT,
- created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(campaign, day));
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ kind TEXT NOT NULL DEFAULT 'daily', publish_on TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_one_daily ON sessions(campaign, day) WHERE kind='daily';
 CREATE TABLE IF NOT EXISTS session_messages(message_id INTEGER PRIMARY KEY, session_id TEXT NOT NULL);
 """
+COLUMNS = "id,campaign,day,state,copy,caption,image_path,story_path,error,created_at,updated_at"
+
+
+def migrate(conn):
+    """Older databases allowed one session per campaign per day; own posts need more."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone()
+    if row and "kind TEXT" not in row[0]:
+        conn.executescript(f"""
+            ALTER TABLE sessions RENAME TO sessions_old;
+            {SCHEMA.split(';')[0]};
+            INSERT INTO sessions({COLUMNS}) SELECT {COLUMNS} FROM sessions_old;
+            DROP TABLE sessions_old;""")
+    conn.executescript(SCHEMA)
 
 OPEN = ("awaiting_image", "awaiting_approval", "failed")
 GREETINGS = {"hi", "hii", "hiii", "hello", "hey", "start", "good morning", "morning"}
 ATTRIBUTION_MARKERS = ("explained by", "විස්තර කරන්නේ", "mbbs", "mrcpch", "mrcp (uk)")
 LINE = 'Reply "approve" to post, or tell me what to change.'
 LANGUAGES = {"en": "English", "si": "Sinhala", "ta": "Tamil"}
+
+
+class OwnPost(BaseModel):
+    """What Gemini reads from a finished image the owner made themselves."""
+    model_config = ConfigDict(extra="forbid")
+    category: str = Field(default="EDUCATIONAL")
+    language: str = Field(default="en")
+    topic: str = Field(min_length=2, max_length=160)
+    headline: str = Field(min_length=2, max_length=160)
+    caption: str = Field(min_length=2, max_length=1700)
+    hashtags: list[str] = Field(default_factory=list, max_length=12)
+
+
+class WhichCampaign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    campaign: str
+
+
+OWN_HINTS = re.compile(r"\b(own|new post|inspiration|my post|post this|extra post)\b", re.I)
 
 
 class CaptionEdit(BaseModel):
@@ -123,8 +157,9 @@ class DailyFlow:
         self.store, self.telegram, self.text = app.store, app.telegram, app.text
         self.settings, self.campaigns = app.settings, app.campaigns
         self.config = {"timezone": "Australia/Sydney", "greeting_time": "08:00", "reminder_after_hours": 3,
+                       "carryover_time": "09:00",
                        **(self.settings.get("daily") or {})}
-        self.store.conn.executescript(SCHEMA)
+        migrate(self.store.conn)
 
     # ---- time -------------------------------------------------------------------------
     def zone(self):
@@ -141,12 +176,18 @@ class DailyFlow:
     def session(self, session_id):
         return self.store.one("SELECT * FROM sessions WHERE id=?", (session_id,))
 
-    def sessions(self, day, states=None):
+    def sessions(self, day, states=None, kind=None):
         rows = self.store.rows("SELECT * FROM sessions WHERE day=? ORDER BY created_at", (day.isoformat(),))
-        return [r for r in rows if states is None or r["state"] in states]
+        return [r for r in rows if (states is None or r["state"] in states) and (kind is None or r["kind"] == kind)]
+
+    def posted_or_booked(self, campaign, day):
+        """True if this campaign already published on, or has a post booked for, that day."""
+        return bool(self.store.one(
+            "SELECT id FROM sessions WHERE campaign=? AND ((state='published' AND COALESCE(publish_on,day)=?) "
+            "OR (state='scheduled' AND publish_on=?))", (campaign, day.isoformat(), day.isoformat())))
 
     def update(self, session_id, **fields):
-        allowed = {"state", "copy", "caption", "image_path", "story_path", "error"}
+        allowed = {"state", "copy", "caption", "image_path", "story_path", "error", "publish_on"}
         if not set(fields) <= allowed:
             raise ValueError("Unknown session field")
         fields["updated_at"] = stamp()
@@ -177,9 +218,13 @@ class DailyFlow:
         self.store.execute(f"UPDATE sessions SET state='discarded',updated_at=? WHERE day<? AND state IN ({','.join('?' * len(OPEN))})",
                            (stamp(), day.isoformat(), *OPEN))
         greeting_at = datetime.combine(day, time.fromisoformat(self.config["greeting_time"]), self.zone())
+        carryover_at = datetime.combine(day, time.fromisoformat(self.config["carryover_time"]), self.zone())
+        if now >= carryover_at:
+            for row in self.store.rows("SELECT * FROM sessions WHERE state='scheduled' AND publish_on<=?", (day.isoformat(),)):
+                await self.publish(row)
         if now >= greeting_at and self.store.get("greeted_day") != day.isoformat():
             self.store.set("greeted_day", day.isoformat())
-            if self.active(day) and not self.sessions(day):
+            if self.active(day) and not self.sessions(day, kind="daily"):
                 await self.telegram.send('Good morning 👋 Reply "hi" to start today\'s posts.')
         await self.remind(now, day)
 
@@ -237,18 +282,14 @@ class DailyFlow:
         if not session:
             caption = message.get("caption", "")
             slug = detect_campaign(caption, self.campaigns) if caption else None
-            candidates = [s for s in self.sessions(day, ("awaiting_image", "awaiting_approval", "failed"))
-                          if not slug or s["campaign"] == slug]
-            waiting = [s for s in candidates if s["state"] == "awaiting_image"]
-            pool = waiting or candidates
-            if len(pool) == 1:
-                session = pool[0]
-            elif pool:
-                await self.choose(pool, {"path": str(path)}, "Which post is this image for?")
-                return
+            waiting = [s for s in self.sessions(day, ("awaiting_image",)) if not slug or s["campaign"] == slug]
+            if OWN_HINTS.search(caption) or not waiting:
+                # Not for a waiting daily prompt: it's the owner's own finished post.
+                return await self.own(path, caption, slug)
+            if len(waiting) == 1:
+                session = waiting[0]
             else:
-                await self.telegram.send('Reply "hi" first to start today\'s posts.' if not self.sessions(day)
-                                         else "There's no post waiting for an image today.")
+                await self.choose(waiting, {"path": str(path)}, "Which post is this image for?")
                 return
         await self.attach(session, path)
 
@@ -269,6 +310,13 @@ class DailyFlow:
 
     async def callback(self, callback):
         parts = callback.get("data", "").split(":")
+        if parts[0] == "o" and len(parts) == 3:
+            item = self.store.one("SELECT * FROM interactions WHERE id=?", (parts[1],))
+            if not item or parts[2] not in self.campaigns:
+                raise ValueError("This choice has expired.")
+            self.store.execute("DELETE FROM interactions WHERE id=?", (parts[1],))
+            payload = json.loads(item["payload"])
+            return await self.own(Path(payload["own_path"]), payload.get("caption", ""), parts[2])
         if len(parts) != 3:
             raise ValueError("This button is no longer valid.")
         item = self.store.one("SELECT * FROM interactions WHERE id=?", (parts[1],))
@@ -284,7 +332,7 @@ class DailyFlow:
 
     # ---- steps ------------------------------------------------------------------------
     async def start(self, day, idea=""):
-        existing = self.sessions(day)
+        existing = self.sessions(day, kind="daily")
         if existing:
             unfinished = [s for s in existing if s["state"] in OPEN]
             if not unfinished:
@@ -400,7 +448,7 @@ class DailyFlow:
             await self.telegram.send('This prompt failed to generate. Reply "retry" first.')
             return
         campaign = self.campaigns[session["campaign"]]
-        folder = ROOT / "out" / "daily" / session["day"] / campaign.slug
+        folder = ROOT / "out" / "daily" / session["day"] / campaign.slug / session["id"]
         folder.mkdir(parents=True, exist_ok=True)
         background = campaign.palette.get("background", "#FFFFFF")
         post, story = folder / "post.png", folder / "story.png"
@@ -472,10 +520,19 @@ class DailyFlow:
             await self.telegram.send(f"{campaign.name}: still couldn't write the prompt ({str(exc)[:300]}).")
 
     async def publish(self, session):
-        if session["state"] not in {"awaiting_approval", "failed"} or not session["image_path"]:
+        if session["state"] not in {"awaiting_approval", "failed", "scheduled"} or not session["image_path"]:
             await self.telegram.send("Send me the finished image first.")
             return
         campaign = self.campaigns[session["campaign"]]
+        today = self.today()
+        if session["kind"] == "own" and session["state"] != "scheduled" and self.posted_or_booked(campaign.slug, today):
+            day = today + timedelta(days=1)
+            while self.posted_or_booked(campaign.slug, day):
+                day += timedelta(days=1)
+            self.update(session["id"], state="scheduled", publish_on=day.isoformat())
+            await self.telegram.send(f"{campaign.name} already posted today, so this one is booked for "
+                                     f"{day:%a %d %b} at {self.config['carryover_time']} ✅")
+            return
         copy = Copy.model_validate_json(session["copy"])
         hits = banned_matches(session["caption"], campaign.banned_phrases)
         if hits:
@@ -505,11 +562,84 @@ class DailyFlow:
             await self.telegram.send(f"⚠ {campaign.name}: some posts failed.\n" + "\n".join(failures)
                                      + '\nReply "approve" to retry. Anything already posted will not be posted twice.')
             return
-        self.update(session["id"], state="published")
+        self.update(session["id"], state="published", publish_on=today.isoformat())
         if dry:
             await self.telegram.send(f"DRY RUN ✅ {campaign.name}: would have posted the post and story to Facebook and Instagram. Nothing was published.")
         else:
             await self.telegram.send(f"✅ Posted {campaign.name} (post + story) to Facebook and Instagram." + ("\n" + "\n".join(links) if links else ""))
+
+    async def own(self, path, note="", slug=None):
+        """The owner made a finished post themselves: read it, write the caption, then approve as usual."""
+        usable = [c for c in self.campaigns.values() if c.enabled and not self.store.paused(c.slug)]
+        if not slug and len(usable) > 1:
+            slug = await self.guess_campaign(path, usable)
+        if not slug:
+            slug = usable[0].slug if len(usable) == 1 else None
+        if not slug:
+            interaction = uuid.uuid4().hex[:12]
+            self.store.execute("INSERT INTO interactions VALUES(?,?,?,?)",
+                               (interaction, "own", json.dumps({"own_path": str(path), "caption": note}, ensure_ascii=False), stamp()))
+            await self.telegram.send("Which page is this post for?",
+                                     [[{"text": c.name[:60], "callback_data": f"o:{interaction}:{c.slug}"}] for c in usable])
+            return
+        campaign = self.campaigns[slug]
+        day = self.today()
+        session_id = uuid.uuid4().hex[:12]
+        self.store.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at,kind) VALUES(?,?,?,?,?,?,?)",
+                           (session_id, slug, day.isoformat(), "generating", stamp(), stamp(), "own"))
+        try:
+            copy, warning = await self.read_post(campaign, path, note)
+        except Exception as exc:
+            log.exception("Could not read own post")
+            self.store.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+            await self.telegram.send(f"I couldn't read that image ({str(exc)[:200]}). Send it again with a short description "
+                                     "as the photo caption, e.g. \"post for the clinic about dust mites\".")
+            return
+        self.update(session_id, copy=copy.model_dump_json(), caption=self.caption(campaign, copy))
+        session = self.session(session_id)
+        await self.attach(session, path)
+        if warning:
+            await self.telegram.send(warning)
+
+    async def guess_campaign(self, path, usable):
+        names = {c.slug: c.name for c in usable}
+        try:
+            result = await self.text.vision_json(
+                "Identify which brand this social-media post belongs to from its logo, name and topic. "
+                f"Answer with one of these slugs exactly: {list(names)}, or 'unknown' if unsure.",
+                json.dumps(names, ensure_ascii=False), path, WhichCampaign)
+            return result.campaign if result.campaign in names else None
+        except Exception:
+            return None
+
+    async def read_post(self, campaign, path, note):
+        system = (campaign.brand_prompt + "\n\nThe owner has ALREADY MADE this finished post image. Do not redesign it. "
+                  "Read the text on the image, work out its topic and language (en, si or ta), and write the social-media "
+                  "caption for it following the brand and medical rules above. The caption must be in the SAME language as the "
+                  "text on the image. No doctor name, credentials or attribution, and no disclaimer or contact details in the "
+                  "caption (both are added automatically). Hashtags go only in the hashtags list. "
+                  "category: MARKETING for LushNote; EDUCATIONAL or INSTITUTIONAL for the clinic. "
+                  "headline: the main headline exactly as printed on the image.")
+        prompt = json.dumps({"owner_note": note or "none"}, ensure_ascii=False)
+        reasons = []
+        for _ in range(2):
+            post = await self.text.vision_json(system, prompt, path, OwnPost)
+            language = post.language if post.language in LANGUAGES else "en"
+            category = post.category.upper()
+            if campaign.style == "lushnote":
+                category = "MARKETING"
+            elif category not in ("EDUCATIONAL", "INSTITUTIONAL"):
+                category = "EDUCATIONAL"
+            copy = Copy.model_validate({"category": category, "language": language, "topic": post.topic,
+                                        "headline": post.headline, "caption": post.caption, "hashtags": post.hashtags,
+                                        "visual_brief": "Owner-made finished post", "visual_kind": "photo"})
+            reasons = [r for r in await check(campaign, copy, self.text) if r != UNAVAILABLE]
+            if not caption_language_ok(clean_caption(campaign, copy.caption, footer_too=False), language):
+                reasons.append(f"The caption must be in {LANGUAGES[language]}, like the text on the image")
+            if not reasons:
+                return copy, ""
+            prompt = json.dumps({"owner_note": note or "none", "previous_caption_failed_because": reasons}, ensure_ascii=False)
+        return copy, "⚠ Please check this caption: " + "; ".join(reasons)[:500]
 
     def status_lines(self):
         day = self.today()
@@ -520,7 +650,9 @@ class DailyFlow:
             if c.active_from and day < c.active_from:
                 lines.append(f"{c.name}: paused until {c.active_from:%d %b %Y}")
         for s in self.sessions(day):
-            lines.append(f"Today · {self.campaigns[s['campaign']].name}: {s['state'].replace('_', ' ')}")
+            lines.append(f"Today · {self.campaigns[s['campaign']].name}{' (own post)' if s['kind'] == 'own' else ''}: {s['state'].replace('_', ' ')}")
+        for s in self.store.rows("SELECT * FROM sessions WHERE state='scheduled' ORDER BY publish_on"):
+            lines.append(f"Booked · {self.campaigns[s['campaign']].name}: {s['publish_on']} {self.config['carryover_time']}")
         return lines
 
 
@@ -534,6 +666,8 @@ HELP = """Marketing Manager – daily flow
 6. Reply "approve" and I post it straight away to Facebook and Instagram, as a post and a story.
 
 If something is unfinished I remind you once. Anything unfinished is dropped at midnight; nothing carries over.
+Own posts: send me any finished image you made yourself (e.g. "for the clinic" as the photo caption).
+I write the caption from the image; approve and it posts now, or tomorrow at 09:00 if that page already posted today.
 Tip: "hi, idea: <your idea>" uses your idea for today's prompt. Reply "retry" before sending the image to get a different prompt.
 
 /status · accounts and today's progress

@@ -366,7 +366,7 @@ class App:
     async def handle_daily(self,callback,message):
         if callback:
             await self.telegram.answer(callback["id"])
-            if callback.get("data","").startswith("s:"):
+            if callback.get("data","").startswith(("s:","o:")):
                 await self.daily.callback(callback)
             else:
                 await self.callback(callback)

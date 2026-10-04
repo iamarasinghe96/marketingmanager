@@ -34,14 +34,40 @@ class TextClient:
                                    "messages":[{"role":"system","content":system},{"role":"user","content":prompt}]})
         return data["choices"][0]["message"]["content"]
 
-    async def ask_gemini(self, system, prompt):
+    async def ask_gemini(self, system, prompt, image=None):
         model = self.settings["gemini"]["text_model"]
+        parts = [{"text":prompt}]
+        if image:
+            from PIL import Image, ImageOps
+            with Image.open(image) as source:
+                picture = ImageOps.exif_transpose(source).convert("RGB")
+                picture.thumbnail((1600, 1600))
+                buffer = io.BytesIO()
+                picture.save(buffer, format="JPEG", quality=90)
+            parts.append({"inlineData":{"mimeType":"image/jpeg","data":base64.b64encode(buffer.getvalue()).decode("ascii")}})
         data = await request(self.client,"Gemini","POST",f"{GEMINI}/models/{model}:generateContent",safe_retry=True,
                              headers={"x-goog-api-key":self.secrets["GEMINI_API_KEY"]},
                              json={"systemInstruction":{"parts":[{"text":system}]},
-                                   "contents":[{"parts":[{"text":prompt}]}],
+                                   "contents":[{"parts":parts}],
                                    "generationConfig":{"responseMimeType":"application/json","maxOutputTokens":8192}})
         return "".join(p.get("text","") for p in data["candidates"][0]["content"]["parts"])
+
+    async def vision_json(self, system, prompt, image, schema):
+        """Read an image (Gemini only; Groq here cannot see images). Retries once with the error."""
+        if not self.secrets.get("GEMINI_API_KEY"):
+            raise APIError("Gemini","Reading images needs GEMINI_API_KEY")
+        day = datetime.now(timezone.utc).date().isoformat()
+        system = system + self.instructions(schema)
+        request_text, last = prompt, None
+        for _ in range(2):
+            if not self.store.quota(day,"gemini_text",self.settings["gemini"]["daily_text_limit"]):
+                raise APIError("Gemini","Local daily text budget exhausted")
+            try:
+                return parse_json(await self.ask_gemini(system,request_text,image),schema)
+            except (ValidationError, ValueError) as exc:
+                last = exc
+                request_text = prompt + "\n\nYour previous answer was rejected: " + str(exc)[:600] + "\nReturn the full JSON object again."
+        raise APIError("Gemini","Could not read the image: " + str(last)[:200])
 
     async def json(self, system, prompt, schema, task="checking"):
         """task "writing" = creative copy (prompt content, captions); "checking" = edits and rule checks."""

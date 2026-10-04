@@ -379,3 +379,78 @@ async def test_english_headline_on_a_sinhala_day_is_rewritten(app,monkeypatch):
     assert "on-image text must be written in Sinhala" in app.text.write.await_args_list[1].args[6]
     caption = app.daily.sessions(app.daily.today())[0]["caption"]
     assert caption.index("📞 +94 77 371 0528") < caption.index("#") if "#" in caption else "📞 +94 77 371 0528" in caption
+
+
+def own_reader(app, language="en"):
+    from bot.daily import OwnPost
+    app.text.vision_json = AsyncMock(return_value=OwnPost(category="EDUCATIONAL",language=language,topic="Dust mites",
+                                                          headline="Dust mites at home",caption="How to reduce dust mites at home.",
+                                                          hashtags=["#Asthma"]))
+
+
+async def test_own_post_is_captioned_and_posted_now(app,monkeypatch,tmp_path):
+    own_reader(app)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_photo({"message_id":5,"caption":"for the clinic"},image(tmp_path))
+    session = app.store.one("SELECT * FROM sessions WHERE kind='own'")
+    assert session["campaign"] == "allergy-asthma-centre" and session["state"] == "awaiting_approval"
+    assert "How to reduce dust mites" in session["caption"] and "📞 +94 77 371 0528" in session["caption"]
+    assert 'Reply "approve"' in app.telegram.photo.await_args.args[1]
+    await app.daily.on_text({"message_id":6,"text":"approve"})
+    assert app.daily.session(session["id"])["state"] == "published"
+
+
+async def test_second_post_same_day_is_booked_for_tomorrow(app,monkeypatch,tmp_path):
+    own_reader(app)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_photo({"message_id":5,"caption":"clinic"},image(tmp_path))
+    await app.daily.on_text({"message_id":6,"text":"approve"})
+    await app.daily.on_photo({"message_id":7,"caption":"another clinic post"},image(tmp_path))
+    await app.daily.on_text({"message_id":8,"text":"approve"})
+    second = app.store.rows("SELECT * FROM sessions WHERE kind='own' ORDER BY created_at")[1]
+    assert second["state"] == "scheduled" and second["publish_on"] == "2026-10-06"
+    assert "booked for Tue 06 Oct at 09:00" in app.telegram.send.await_args.args[0]
+    at(monkeypatch,"2026-10-06T03:00:00+00:00")  # 08:30 Colombo, before 09:00
+    await app.daily.tick()
+    assert app.daily.session(second["id"])["state"] == "scheduled"
+    at(monkeypatch,"2026-10-06T03:31:00+00:00")  # 09:01 Colombo
+    await app.daily.tick()
+    assert app.daily.session(second["id"])["state"] == "published"
+
+
+async def test_photo_goes_to_waiting_daily_prompt_unless_marked_own(app,monkeypatch,tmp_path):
+    own_reader(app)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    await app.daily.on_photo({"message_id":2},image(tmp_path))
+    assert app.daily.sessions(app.daily.today(),kind="daily")[0]["state"] == "awaiting_approval"
+    app.text.vision_json.assert_not_called()
+    await app.daily.on_photo({"message_id":3,"caption":"own post for the clinic"},image(tmp_path))
+    assert app.store.one("SELECT COUNT(*) n FROM sessions WHERE kind='own'")["n"] == 1
+
+
+async def test_unknown_campaign_asks_with_buttons(app,monkeypatch,tmp_path):
+    from bot.daily import WhichCampaign
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    app.text.vision_json = AsyncMock(return_value=WhichCampaign(campaign="unknown"))
+    await app.daily.on_photo({"message_id":2},image(tmp_path))
+    buttons = app.telegram.send.await_args.args[1]
+    assert {b[0]["callback_data"].split(":")[2] for b in buttons} == {"allergy-asthma-centre","lushnote"}
+    own_reader(app)
+    await app.daily.callback({"data":buttons[0][0]["callback_data"]})
+    assert app.store.one("SELECT state FROM sessions WHERE kind='own'")["state"] == "awaiting_approval"
+
+
+def test_old_sessions_table_is_migrated(tmp_path):
+    import sqlite3
+    from bot.daily import migrate
+    conn = sqlite3.connect(tmp_path/"old.sqlite3")
+    conn.executescript("""CREATE TABLE sessions(id TEXT PRIMARY KEY, campaign TEXT NOT NULL, day TEXT NOT NULL, state TEXT NOT NULL,
+        copy TEXT, caption TEXT, image_path TEXT, story_path TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(campaign, day));
+        INSERT INTO sessions(id,campaign,day,state,created_at,updated_at) VALUES('a','c','2026-10-04','published','x','x');""")
+    migrate(conn)
+    assert conn.execute("SELECT kind FROM sessions WHERE id='a'").fetchone()[0] == "daily"
+    conn.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at,kind) VALUES('b','c','2026-10-04','x','x','x','own')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO sessions(id,campaign,day,state,created_at,updated_at) VALUES('d','c','2026-10-04','x','x','x')")
