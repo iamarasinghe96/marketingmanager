@@ -576,3 +576,17 @@ async def test_reply_to_lost_post_edits_nothing_and_cancel_discards(app,monkeypa
     assert "can't find the post" in app.telegram.send.await_args.args[0]
     await app.daily.on_text({"message_id":4,"text":"cancel"})
     assert app.daily.session(session["id"])["state"] == "discarded"
+
+
+async def test_ignore_drops_today_and_stops_reminders(app,monkeypatch,tmp_path):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    session = app.daily.sessions(app.daily.today())[0]
+    await app.daily.on_text({"message_id":2,"text":"Ignore"})
+    assert app.daily.session(session["id"])["state"] == "discarded"
+    app.telegram.send.reset_mock()
+    at(monkeypatch,"2026-10-05T12:00:00+00:00")
+    await app.daily.tick()
+    app.telegram.send.assert_not_called()
+    await app.daily.on_text({"message_id":3,"text":"hi"})
+    assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"

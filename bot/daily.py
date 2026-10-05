@@ -97,7 +97,7 @@ class TitleEdit(BaseModel):
 class Intent(BaseModel):
     """What a free-form owner message means."""
     model_config = ConfigDict(extra="forbid")
-    action: Literal["start", "new_topic", "approve", "edit", "other"]
+    action: Literal["start", "new_topic", "approve", "edit", "ignore", "other"]
     idea: str = Field(default="", max_length=500)
     language: Literal["", "en", "si", "ta"] = ""
     campaign: str = Field(default="", max_length=60)
@@ -116,6 +116,12 @@ def is_greeting(text):
 
 def is_new_prompt(text):
     return text.casefold().strip(" .!") in {"retry", "try again", "again", "redo", "new prompt", "new one", "another one", "different topic"}
+
+
+def is_ignore(text):
+    t = text.casefold().strip(" .!")
+    return t in {"ignore", "ignore today", "skip today", "not today", "no post today", "no posts today",
+                 "day off", "leave it", "stop for today", "nothing today"}
 
 
 def is_cancel(text):
@@ -324,6 +330,8 @@ class DailyFlow:
             return await self.start(day, language=code)
         if lowered.startswith(("hi ", "hi,", "hello ", "hello,")):
             return await self.start(day, idea=re.sub(r"^(hi|hello)[\s,!.]*", "", text, flags=re.I))
+        if is_ignore(text):
+            return await self.ignore(day)
         replied = self.replied_session(message, day)
         if not replied and message.get("reply_to_message"):
             # Never let a reply to a lost post edit some other post by mistake.
@@ -344,6 +352,15 @@ class DailyFlow:
                 await self.telegram.send("Today's posts are finished. See you tomorrow 👋")
             return
         await self.act(session, text)
+
+    async def ignore(self, day):
+        """Quiet day: drop what's open, no greeting or reminders until the owner asks for a post."""
+        open_ids = [s["id"] for s in self.sessions(day) if s["state"] in OPEN and s["state"] != "scheduled"]
+        for session_id in open_ids:
+            self.update(session_id, state="discarded")
+        self.store.set("greeted_day", day.isoformat())
+        self.store.set("reminded_day", day.isoformat())
+        await self.telegram.send("OK, nothing today: no reminders. Message me any time if you want a post.")
 
     async def act(self, session, text):
         if is_cancel(text):
@@ -714,6 +731,7 @@ class DailyFlow:
             "keeping their details) and/or in a language (en, si=Sinhala, ta=Tamil).\n"
             "- new_topic: posts already exist today but they want a DIFFERENT topic / a fresh prompt (idea as above).\n"
             "- approve: they clearly approve posting now.\n"
+            "- ignore: they want no post / no reminders today (e.g. 'ignore', 'skip it today', 'busy today').\n"
             "- edit: a change to the caption, title or image of the current post.\n"
             "- other: a question or chat; put a short helpful answer in reply (explain they can say e.g. "
             "'create a post about X', send an image, ask for changes, or 'approve').\n"
@@ -740,6 +758,9 @@ class DailyFlow:
             for session in redo[:1] if target or len(redo) == 1 else redo:
                 self.store.execute("DELETE FROM sessions WHERE id=?", (session["id"],))
                 await self.start_one(session, idea=intent.idea, language=intent.language or None)
+            return True
+        if intent.action == "ignore":
+            await self.ignore(day)
             return True
         if intent.action == "approve":
             session = await self.pick(day, ("awaiting_approval", "awaiting_image"), {"text": "approve"})
