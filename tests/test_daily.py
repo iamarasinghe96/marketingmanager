@@ -590,3 +590,22 @@ async def test_ignore_drops_today_and_stops_reminders(app,monkeypatch,tmp_path):
     app.telegram.send.assert_not_called()
     await app.daily.on_text({"message_id":3,"text":"hi"})
     assert app.daily.sessions(app.daily.today())[0]["state"] == "awaiting_image"
+
+
+async def test_own_post_with_title_note_gets_the_typed_title(app,monkeypatch,tmp_path):
+    from bot.daily import TitleEdit
+    own_reader(app)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    typed = []
+    async def fake_add_title(picture,text,language,color,box,**style):
+        typed.append((text,language))
+        return picture
+    monkeypatch.setattr("bot.title.add_title",fake_add_title)
+    app.text.json = AsyncMock(return_value=TitleEdit(about_title=True,text="ගෘහස්ථ සුරතල් සතුන් සහ අසාත්මිකතා"))
+    await app.daily.on_photo({"message_id":5,"caption":'Add the "ගෘහස්ථ සුරතල් සතුන් සහ අසාත්මිකතා" title to this, for the clinic'},image(tmp_path))
+    assert typed == [("ගෘහස්ථ සුරතල් සතුන් සහ අසාත්මිකතා","si")]
+    session = app.store.one("SELECT * FROM sessions WHERE kind='own'")
+    # A replacement picture for the same post keeps that title.
+    await app.daily.on_photo({"message_id":6},image(tmp_path))
+    assert len(typed) == 2 and typed[-1] == ("ගෘහස්ථ සුරතල් සතුන් සහ අසාත්මිකතා","si")
+    assert app.store.one("SELECT COUNT(*) n FROM sessions")["n"] == 1

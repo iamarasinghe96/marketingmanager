@@ -118,6 +118,15 @@ def is_new_prompt(text):
     return text.casefold().strip(" .!") in {"retry", "try again", "again", "redo", "new prompt", "new one", "another one", "different topic"}
 
 
+def script_language(text):
+    """'si' or 'ta' when the text is written in Sinhala or Tamil letters, else ''."""
+    if re.search(r"[\u0D80-\u0DFF]", text or ""):
+        return "si"
+    if re.search(r"[\u0B80-\u0BFF]", text or ""):
+        return "ta"
+    return ""
+
+
 def is_ignore(text):
     t = text.casefold().strip(" .!")
     return t in {"ignore", "ignore today", "skip today", "not today", "no post today", "no posts today",
@@ -396,7 +405,7 @@ class DailyFlow:
             # A new image while a post is waiting for its image OR for approval replaces that post's
             # picture (caption kept); "own post" in the photo caption makes it a separate post.
             waiting = [s for s in self.sessions(day, ("awaiting_image", "awaiting_approval"))
-                       if s["kind"] == "daily" and (not slug or s["campaign"] == slug)]
+                       if (s["kind"] == "daily" or s["state"] == "awaiting_approval") and (not slug or s["campaign"] == slug)]
             if OWN_HINTS.search(caption) or not waiting:
                 # Not for a waiting daily prompt: it's the owner's own finished post.
                 return await self.own(path, caption, slug)
@@ -583,7 +592,7 @@ class DailyFlow:
         post, story = folder / "post.png", folder / "story.png"
         picture = fit(path, tuple(campaign.post_size), background)
         picture.save(folder / "raw.png")  # kept so the typed title can be redone later
-        self.store.set(f"title:{session['id']}", "")
+        # A replacement image keeps the title and any title changes already asked for.
         picture = await self.titled(session, picture)
         picture.save(post)
         fit(post, tuple(campaign.story_size), background).save(story)
@@ -591,9 +600,13 @@ class DailyFlow:
         await self.show(session)
 
     def typed_title(self, session):
+        """Daily Sinhala/Tamil posts always get the typed title; own posts once the owner gave one."""
         campaign = self.campaigns[session["campaign"]]
-        copy = Copy.model_validate_json(session["copy"])
-        return bool(campaign.title_box and copy.language in ("si", "ta") and session["kind"] == "daily")
+        if not campaign.title_box:
+            return False
+        if session["kind"] == "daily":
+            return Copy.model_validate_json(session["copy"]).language in ("si", "ta")
+        return bool(script_language(self.title_style(session)["text"]))
 
     def title_style(self, session):
         style = dict(TITLE_DEFAULTS)
@@ -610,7 +623,8 @@ class DailyFlow:
         style["text"] = style["text"] or copy.headline
         style["color"] = style["color"] or campaign.palette.get("primary", "#0B4257")
         style["highlight_color"] = style["highlight_color"] or campaign.palette.get("accent", style["color"])
-        return await add_title(picture, style.pop("text"), copy.language, style.pop("color"), campaign.title_box, **style)
+        language = script_language(style["text"]) or copy.language
+        return await add_title(picture, style.pop("text"), language, style.pop("color"), campaign.title_box, **style)
 
     async def retitle(self, session, instruction):
         """Let the AI restyle the typed title (size, line breaks, alignment, filling the space, colour…) on the
@@ -643,12 +657,17 @@ class DailyFlow:
         try:
             result = await self.text.json(system, json.dumps({"current_style": current, "owner_message": instruction},
                                                              ensure_ascii=False), TitleEdit, task="checking")
-        except (ValidationError, ValueError):
+        except Exception as exc:  # AI unavailable: treat it as a caption edit
+            log.warning("Title edit not understood: %s", str(exc)[:200])
             return None
         if not result.about_title:
             return None
         style = result.model_dump(exclude={"about_title", "caption_instruction"})
         style["text"] = style["text"] or current["text"]
+        if not script_language(style["text"]):
+            await self.telegram.send("I can only type Sinhala or Tamil titles onto the image. For an English title, "
+                                     "ask ChatGPT for an image with the title in it and send that.")
+            return ""
         self.store.set(f"title:{session['id']}", json.dumps(style, ensure_ascii=False))
         background = campaign.palette.get("background", "#FFFFFF")
         try:
@@ -677,7 +696,8 @@ class DailyFlow:
                 return await self.start_one(session)
             await self.telegram.send('Reply "retry" to write this prompt again.')
             return
-        if session["state"] == "awaiting_approval" and self.typed_title(session):
+        if session["state"] == "awaiting_approval" and self.campaigns[session["campaign"]].title_box \
+                and (self.typed_title(session) or session["kind"] == "own"):
             rest = await self.retitle(session, instruction)
             if rest == "":
                 return
@@ -867,6 +887,12 @@ class DailyFlow:
         await self.attach(session, path)
         if warning:
             await self.telegram.send(warning)
+        session = self.session(session_id)
+        if note and session and session["state"] == "awaiting_approval" and campaign.title_box:
+            # e.g. "add the title '…' to this": the caption already used the note; this types the title in.
+            rest = await self.retitle(session, note)
+            if rest:
+                await self.edit(self.session(session_id), rest)
 
     async def guess_campaign(self, path, usable):
         names = {c.slug: c.name for c in usable}
