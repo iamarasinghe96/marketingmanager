@@ -47,6 +47,11 @@ def migrate(conn):
             INSERT INTO sessions({COLUMNS}) SELECT {COLUMNS} FROM sessions_old;
             DROP TABLE sessions_old;""")
     conn.executescript(SCHEMA)
+    # Topic history = posts that really went live. Drop entries left by dry runs, retries and tests.
+    if conn.execute("SELECT name FROM sqlite_master WHERE name='history'").fetchone() and \
+            conn.execute("SELECT name FROM sqlite_master WHERE name='publications'").fetchone():
+        conn.execute("DELETE FROM history WHERE draft_id NOT IN (SELECT draft_id FROM publications "
+                     "WHERE status='completed' AND idempotency_key LIKE 'live:%')")
 
 OPEN = ("awaiting_image", "awaiting_approval", "failed")
 GREETINGS = {"hi", "hii", "hiii", "hello", "hey", "start", "good morning", "morning"}
@@ -385,8 +390,13 @@ class DailyFlow:
                 return
             return await self.publish(session)
         if is_new_prompt(text) and session["state"] in ("awaiting_image", "failed"):
-            # Start this campaign's prompt again from scratch (a new topic and caption).
+            # A fresh prompt, but on the SAME topic and language: one topic per day, no skipping ahead
+            # in the plan. Only "different topic" (or naming a new topic) changes it.
             self.store.execute("DELETE FROM sessions WHERE id=?", (session["id"],))
+            if session["copy"] and "different" not in text.casefold():
+                old = Copy.model_validate_json(session["copy"])
+                return await self.start_one(session, idea=f"Keep exactly today's topic: {old.topic}. Write a fresh headline, "
+                                                          "caption and visual on this same topic.", language=old.language)
             return await self.start_one(session)
         await self.edit(session, text)
 
@@ -489,8 +499,6 @@ class DailyFlow:
                 copy = await self.write(campaign, day, own_idea, language)
                 caption = self.caption(campaign, copy)
                 session = self.update(session_id, state="awaiting_image", copy=copy.model_dump_json(), caption=caption)
-                self.store.execute("INSERT OR REPLACE INTO history(draft_id,campaign,day,topic,headline) VALUES(?,?,?,?,?)",
-                                   (session_id, campaign.slug, day.isoformat(), copy.topic, copy.headline))
                 await self.send_prompt(campaign, session, copy)
             except Exception as exc:
                 log.exception("Could not prepare %s", campaign.slug)
@@ -850,6 +858,10 @@ class DailyFlow:
                                      + '\nReply "approve" to retry. Anything already posted will not be posted twice.')
             return
         self.update(session["id"], state="published", publish_on=today.isoformat())
+        if not dry:
+            # Only what really went live counts as "done" for topic planning (tests, retries and dry runs don't).
+            self.store.execute("INSERT OR REPLACE INTO history(draft_id,campaign,day,topic,headline) VALUES(?,?,?,?,?)",
+                               (session["id"], campaign.slug, session["day"], copy.topic, copy.headline))
         if dry:
             await self.telegram.send(f"DRY RUN ✅ {campaign.name}: would have posted the post and story to Facebook and Instagram. Nothing was published.")
         else:

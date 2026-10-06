@@ -609,3 +609,26 @@ async def test_own_post_with_title_note_gets_the_typed_title(app,monkeypatch,tmp
     await app.daily.on_photo({"message_id":6},image(tmp_path))
     assert len(typed) == 2 and typed[-1] == ("ගෘහස්ථ සුරතල් සතුන් සහ අසාත්මිකතා","si")
     assert app.store.one("SELECT COUNT(*) n FROM sessions")["n"] == 1
+
+
+async def test_retry_keeps_todays_topic_and_only_live_posts_enter_history(app,monkeypatch,tmp_path):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    first = app.text.write.await_args
+    await app.daily.on_text({"message_id":2,"text":"retry"})
+    again = app.text.write.await_args
+    topic = app.text.write.return_value.topic
+    assert topic in again.args[3] and again.kwargs["language"] == app.text.write.return_value.language
+    await app.daily.on_photo({"message_id":3},image(tmp_path))
+    await app.daily.on_text({"message_id":4,"text":"approve"})  # dry run
+    assert app.store.rows("SELECT * FROM history") == []
+    # Live: the posted topic is recorded once, for that day.
+    app.settings["dry_run"] = False
+    app.meta.publish = AsyncMock(return_value=("1","https://example.test/p"))
+    app.store.execute("DELETE FROM sessions")
+    at(monkeypatch,"2026-10-06T03:00:00+00:00")
+    await app.daily.on_text({"message_id":5,"text":"hi english"})
+    await app.daily.on_photo({"message_id":6},image(tmp_path))
+    await app.daily.on_text({"message_id":7,"text":"approve"})
+    rows = app.store.rows("SELECT day,topic FROM history")
+    assert rows == [{"day":"2026-10-06","topic":topic}]
