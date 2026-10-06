@@ -632,3 +632,13 @@ async def test_retry_keeps_todays_topic_and_only_live_posts_enter_history(app,mo
     await app.daily.on_text({"message_id":7,"text":"approve"})
     rows = app.store.rows("SELECT day,topic FROM history")
     assert rows == [{"day":"2026-10-06","topic":topic}]
+
+
+async def test_owner_caption_is_used_word_for_word(app,monkeypatch,tmp_path):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi"})
+    app.text.json = AsyncMock(side_effect=AssertionError("no AI for an exact caption"))
+    await app.daily.on_photo({"message_id":2,"caption":"Caption: Pets can trigger allergies. Wash hands after play.\n#PetAllergy"},image(tmp_path))
+    session = app.daily.sessions(app.daily.today())[0]
+    assert session["caption"].startswith("Pets can trigger allergies. Wash hands after play.")
+    assert "📞 +94 77 371 0528" in session["caption"] and session["caption"].endswith("#PetAllergy")

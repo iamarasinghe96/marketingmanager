@@ -704,6 +704,9 @@ class DailyFlow:
                 return await self.start_one(session)
             await self.telegram.send('Reply "retry" to write this prompt again.')
             return
+        own_words = re.match(r"\s*(?:use this caption|my caption|new caption|caption)\s*[:\-]\s*(.+)", instruction, re.S | re.I)
+        if own_words:
+            return await self.set_caption(session, own_words.group(1).strip())
         if session["state"] == "awaiting_approval" and self.campaigns[session["campaign"]].title_box \
                 and (self.typed_title(session) or session["kind"] == "own"):
             rest = await self.retitle(session, instruction)
@@ -799,6 +802,29 @@ class DailyFlow:
             await self.telegram.send(intent.reply)
             return True
         return False
+
+    async def set_caption(self, session, text):
+        """The owner's own caption, word for word. Contact block, disclaimer and hashtag limit still apply."""
+        campaign = self.campaigns[session["campaign"]]
+        copy = Copy.model_validate_json(session["copy"])
+        tags = re.findall(r"#[^\s#]+", text)
+        body = re.sub(r"(?:\s*#[^\s#]+)+\s*$", "", text).strip() if tags else text
+        try:
+            updated = copy.model_copy(update={"caption": clean_caption(campaign, body, footer_too=False),
+                                              "hashtags": tags or copy.hashtags})
+            updated = Copy.model_validate(updated.model_dump())
+        except ValidationError as exc:
+            await self.telegram.send(f"I couldn't use that caption: {str(exc)[:300]}")
+            return
+        hits = banned_matches(updated.caption, campaign.banned_phrases)
+        if hits:
+            await self.telegram.send("Not used: it contains banned wording (" + ", ".join(hits) + "). The caption is unchanged.")
+            return
+        session = self.update(session["id"], copy=updated.model_dump_json(), caption=self.caption(campaign, updated))
+        if session["image_path"]:
+            await self.show(session)
+        else:
+            self.remember(await self.telegram.send((session["caption"] + "\n\nSend me the finished image when ready.")[:4000]), session)
 
     async def start_one(self, session, idea="", language=None):
         campaign = self.campaigns[session["campaign"]]
