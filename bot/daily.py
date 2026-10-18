@@ -132,6 +132,10 @@ def script_language(text):
     return ""
 
 
+YESTERDAY = re.compile(r"(yesterday|ඊයේ|நேற்று).{0,40}(post|caption|topic|පෝස්ට්|ලිපි)|"
+                       r"(post|caption|topic).{0,40}(yesterday|ඊයේ|நேற்று)", re.I | re.S)
+
+
 def is_ignore(text):
     t = text.casefold().strip(" .!")
     return t in {"ignore", "ignore today", "skip today", "not today", "no post today", "no posts today",
@@ -346,6 +350,9 @@ class DailyFlow:
             return await self.start(day, idea=re.sub(r"^(hi|hello)[\s,!.]*", "", text, flags=re.I))
         if is_ignore(text):
             return await self.ignore(day)
+        if YESTERDAY.search(text):
+            replied_to = self.replied_session(message, day)
+            return await self.use_yesterday(day, current=replied_to)
         replied = self.replied_session(message, day)
         if not replied and message.get("reply_to_message"):
             # Never let a reply to a lost post edit some other post by mistake.
@@ -366,6 +373,44 @@ class DailyFlow:
                 await self.telegram.send("Today's posts are finished. See you tomorrow 👋")
             return
         await self.act(session, text)
+
+    async def use_yesterday(self, day, slug=None, current=None):
+        """The owner forgot to send yesterday's picture: carry that unfinished post (topic + caption) into today.
+        It takes the place of today's post for that page, so the plan never runs ahead."""
+        if current:
+            slug = current["campaign"]
+        rows = self.store.rows("SELECT * FROM sessions WHERE kind='daily' AND day<? AND day>=? AND copy IS NOT NULL "
+                               "AND state NOT IN ('published','publishing','scheduled') ORDER BY day DESC, updated_at DESC",
+                               (day.isoformat(), (day - timedelta(days=3)).isoformat()))
+        rows = [r for r in rows if not slug or r["campaign"] == slug]
+        if not rows:
+            await self.telegram.send("I can't find an unfinished post from yesterday.")
+            return
+        old = rows[0]
+        campaign = self.campaigns[old["campaign"]]
+        copy = Copy.model_validate_json(old["copy"])
+        if current is None:
+            current = next((s for s in self.sessions(day, ("awaiting_image", "awaiting_approval", "failed"))
+                            if s["campaign"] == old["campaign"]), None)
+        await self.telegram.send(f"Using yesterday's {campaign.name} post: {copy.topic}.")
+        if current is None:
+            taken = any(s["campaign"] == old["campaign"] for s in self.sessions(day, kind="daily"))
+            session_id = uuid.uuid4().hex[:12]
+            self.store.execute("INSERT INTO sessions(id,campaign,day,state,copy,caption,created_at,updated_at,kind) "
+                               "VALUES(?,?,?,?,?,?,?,?,?)",
+                               (session_id, old["campaign"], day.isoformat(), "awaiting_image", old["copy"],
+                                self.caption(campaign, copy), stamp(), stamp(), "own" if taken else "daily"))
+            self.remember(await self.telegram.send("Send me the finished picture for it."), self.session(session_id))
+            return
+        self.store.set(f"title:{current['id']}", "")
+        session = self.update(current["id"], copy=old["copy"], caption=self.caption(campaign, copy), error=None)
+        raw = Path(session["image_path"]).with_name("raw.png") if session["image_path"] else None
+        if raw and raw.is_file():
+            # Redo the post from the clean picture you sent, with yesterday's caption (and its title rules).
+            await self.attach(session, raw)
+        else:
+            session = self.update(session["id"], state="awaiting_image")
+            self.remember(await self.telegram.send("Send me the finished picture for it."), session)
 
     async def ignore(self, day):
         """Quiet day: drop what's open, no greeting or reminders until the owner asks for a post."""
@@ -425,6 +470,8 @@ class DailyFlow:
                 await self.choose(waiting, {"path": str(path)}, "Which post is this image for?")
                 return
         await self.attach(session, path)
+        if caption and YESTERDAY.search(caption):
+            return await self.use_yesterday(day, current=self.session(session["id"]))
         if caption and not OWN_HINTS.search(caption):
             # A note typed with the image ("middle align සහ") is applied as an edit straight away.
             session = self.session(session["id"])
@@ -601,11 +648,20 @@ class DailyFlow:
         picture = fit(path, tuple(campaign.post_size), background)
         picture.save(folder / "raw.png")  # kept so the typed title can be redone later
         # A replacement image keeps the title and any title changes already asked for.
-        picture = await self.titled(session, picture)
+        from bot.title import AreaNotEmpty
+        skipped = False
+        try:
+            picture = await self.titled(session, picture)
+        except AreaNotEmpty:
+            skipped = True
         picture.save(post)
         fit(post, tuple(campaign.story_size), background).save(story)
         session = self.update(session["id"], state="awaiting_approval", image_path=str(post), story_path=str(story), error=None)
         await self.show(session)
+        if skipped:
+            await self.telegram.send("This picture already has text where the title goes, so I didn't type the title on it. "
+                                     "If it belongs to yesterday's post, say \"use yesterday's caption\". To swap the picture, "
+                                     "send one with the title area left empty.")
 
     def typed_title(self, session):
         """Daily Sinhala/Tamil posts always get the typed title; own posts once the owner gave one."""

@@ -118,11 +118,27 @@ async def render_title(text, language, color, width, height, align="left", valig
     return image.resize((max(1, image.width // 2), max(1, image.height // 2)), Image.Resampling.LANCZOS)
 
 
+class AreaNotEmpty(ValueError):
+    """The title area of the picture already has text or artwork in it."""
+
+
+def area_is_empty(image, box):
+    """True when box=(x, y, w, h) is plain: almost no dark pixels (text, photo detail) in it."""
+    x, y, w, h = box
+    region = image.convert("L").crop((x, y, x + w, y + h))
+    small = region.resize((max(1, w // 2), max(1, h // 2)))
+    dark = sum(small.histogram()[:140])
+    return dark / max(1, small.width * small.height) < 0.025
+
+
 async def add_title(base, text, language, color, box, scale=1.0, fill=False, **style):
     """Paste the rendered title into box=(x, y, w, h) fractions. Normally only the plain part of the box is
     used; fill=True uses the whole box so the title can be as large as possible."""
     pixels = tuple(round(v * base.size[i % 2]) for i, v in enumerate(box))
     x, y, w, h = pixels if fill else calm_box(base, pixels)
+    if not fill and not area_is_empty(base, (x, y, w, h)):
+        # Never type over a title or text that's already on the picture.
+        raise AreaNotEmpty("this picture already has text where the title goes")
     if fill:
         # Tighter lines leave more height for bigger letters (padding still protects tall vowel signs).
         style["line_height"] = min(style.get("line_height", 1.3), 1.05)

@@ -642,3 +642,40 @@ async def test_owner_caption_is_used_word_for_word(app,monkeypatch,tmp_path):
     session = app.daily.sessions(app.daily.today())[0]
     assert session["caption"].startswith("Pets can trigger allergies. Wash hands after play.")
     assert "📞 +94 77 371 0528" in session["caption"] and session["caption"].endswith("#PetAllergy")
+
+
+def test_title_area_check_spots_existing_text():
+    from PIL import ImageDraw
+    from bot.title import area_is_empty
+    plain = Image.new("RGB",(1080,1350),"#F7F7F2")
+    assert area_is_empty(plain,(65,297,626,405))
+    texty = plain.copy()
+    draw = ImageDraw.Draw(texty)
+    for row in range(3):
+        draw.rectangle((70,320+row*110,640,380+row*110),fill="#0B4257")  # three lines of heavy title text
+    assert not area_is_empty(texty,(65,297,626,405))
+
+
+async def test_forgotten_picture_uses_yesterdays_post_instead_of_todays_title(app,monkeypatch,tmp_path):
+    from bot.title import AreaNotEmpty
+    aac = app.campaigns["allergy-asthma-centre"]
+    # Yesterday: English prompt sent, picture never came; dropped at midnight.
+    yesterday_copy = sample(aac,"en").model_copy(update={"topic":"Smoke as an asthma trigger","caption":"Smoke can irritate the airways."})
+    app.text.write = AsyncMock(return_value=yesterday_copy)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi english"})
+    at(monkeypatch,"2026-10-06T03:00:00+00:00")
+    await app.daily.tick()
+    # Today: a Sinhala prompt; the owner sends yesterday's finished English picture.
+    app.text.write = AsyncMock(return_value=sample(aac,"si").model_copy(update={"caption":"දුම් නිසා ඇදුම රෝග ලක්ෂණ ඇති විය හැකිය."}))
+    await app.daily.on_text({"message_id":2,"text":"hi sinhala"})
+    async def occupied(*args,**kwargs):
+        raise AreaNotEmpty("this picture already has text where the title goes")
+    monkeypatch.setattr("bot.title.add_title",occupied)
+    await app.daily.on_photo({"message_id":3},image(tmp_path))
+    assert "already has text where the title goes" in app.telegram.send.await_args.args[0]
+    await app.daily.on_text({"message_id":4,"text":"No I want yesterday post caption with this post, I forgot to send you the finished picture"})
+    today = app.daily.sessions(app.daily.today())
+    assert len(today) == 1 and today[0]["state"] == "awaiting_approval"
+    assert today[0]["caption"].startswith("Smoke can irritate the airways.")
+    assert Copy.model_validate_json(today[0]["copy"]).language == "en"
