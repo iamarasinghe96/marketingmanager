@@ -470,7 +470,7 @@ class DailyFlow:
                 await self.telegram.send(f"{self.campaigns[session['campaign']].name}: send me the finished image first.")
                 return
             return await self.publish(session)
-        if is_new_prompt(text) and session["state"] in ("awaiting_image", "failed"):
+        if is_new_prompt(text) and session["state"] in ("awaiting_image", "awaiting_approval", "failed"):
             # A fresh prompt, but on the SAME topic and language: one topic per day, no skipping ahead
             # in the plan. Only "different topic" (or naming a new topic) changes it.
             self.store.execute("DELETE FROM sessions WHERE id=?", (session["id"],))

@@ -696,3 +696,14 @@ async def test_topic_already_on_the_page_is_rewritten(app,monkeypatch):
     app.store.execute("DELETE FROM sessions")
     app.text.json = AsyncMock(side_effect=AssertionError("no repeat check for the owner's own idea"))
     await app.daily.start(app.daily.today(), idea="allergic rhinitis again, please", language="en")
+
+
+async def test_different_topic_after_the_picture_starts_a_new_prompt(app,monkeypatch,tmp_path):
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi english"})
+    await app.daily.on_photo({"message_id":2},image(tmp_path))
+    app.daily.edit = AsyncMock()
+    await app.daily.on_text({"message_id":3,"text":"different topic"})
+    app.daily.edit.assert_not_called()
+    session = app.daily.sessions(app.daily.today())[0]
+    assert session["state"] == "awaiting_image" and app.text.write.await_count == 2
