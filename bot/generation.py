@@ -136,6 +136,9 @@ class TextClient:
                        "Never put a disclaimer or 'not medical advice' note in any field; the disclaimer is added to the caption automatically. ")
         else:
             system += "Use category MARKETING, Australian English, no em dashes, headline ending with a full stop. "
+        system += ("recent_do_not_repeat lists posts ALREADY PUBLISHED (topics, and the start of captions really on the page). "
+                   "Unless the owner's idea asks for it, choose a subject that none of them covered: not the same condition, "
+                   "trigger or theme, even in different words or another language. topic: a short English label of the subject. ")
         context = {"date":day.isoformat(),"language":language,"angle":angle,"idea":idea,
                    "approved_facts":campaign.approved_facts,"contact":{"phone":campaign.phone,"address":campaign.address,"website":campaign.website},
                    "max_hashtags":campaign.hashtag_rules["max_count"],"recent_do_not_repeat":history,

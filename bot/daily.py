@@ -109,6 +109,12 @@ class Intent(BaseModel):
     reply: str = Field(default="", max_length=500)
 
 
+class RepeatCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    repeat: bool
+    matches: str = Field(default="", max_length=300)
+
+
 class CaptionEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     caption: str = Field(min_length=2, max_length=1700)
@@ -301,6 +307,36 @@ class DailyFlow:
         cutoff = (day - timedelta(days=30)).isoformat()
         rows = self.store.rows("SELECT topic,headline FROM history WHERE campaign=? AND day>=? ORDER BY day DESC LIMIT 30", (campaign.slug, cutoff))
         return [dict(row) for row in rows]
+
+    async def page_posts(self, campaign, day):
+        """Recent posts actually on the page (also ones made outside the bot); fetched once a day."""
+        key = f"page_posts:{campaign.slug}"
+        cached = json.loads(self.store.get(key) or "{}")
+        if cached.get("day") == day.isoformat():
+            return cached["posts"]
+        try:
+            posts = await self.app.meta.recent_posts(campaign)
+        except Exception as exc:
+            log.warning("Could not read recent %s posts: %s", campaign.slug, str(exc)[:200])
+            return cached.get("posts", [])
+        self.store.set(key, json.dumps({"day": day.isoformat(), "posts": posts}, ensure_ascii=False))
+        return posts
+
+    async def repeats(self, copy, history):
+        """Ask the checker whether the new post covers the same subject as a recent one (any wording/language)."""
+        system = ("You compare social media post topics for a medical clinic. Decide whether the NEW post covers the same "
+                  "main subject as ANY recent post: the same condition, trigger or theme counts as a repeat even if worded "
+                  "differently or written in another language (e.g. 'Allergic rhinitis' = 'nasal allergy symptoms' = "
+                  "'නාසය ආශ්‍රිත ආසාත්මිකතා'). A broad shared word like 'allergy' alone is not a repeat. "
+                  "If it repeats, put the matching recent post (date and topic) in matches.")
+        prompt = json.dumps({"new_post": {"topic": copy.topic, "headline": copy.headline, "caption_start": copy.caption[:300]},
+                             "recent_posts": history}, ensure_ascii=False)
+        try:
+            result = await self.text.json(system, prompt, RepeatCheck, task="checking")
+        except Exception as exc:
+            log.warning("Repeat check unavailable: %s", str(exc)[:200])
+            return ""
+        return (result.matches or "a recent post") if isinstance(result, RepeatCheck) and result.repeat else ""
 
     # ---- background -------------------------------------------------------------------
     async def tick(self):
@@ -555,7 +591,7 @@ class DailyFlow:
     async def write(self, campaign, day, idea="", language=None):
         self.unchecked = False
         correction, copy, reasons = "", None, []
-        history = self.history(campaign, day)
+        history = self.history(campaign, day) + await self.page_posts(campaign, day)
         supported = campaign.language_rules.get("supported", campaign.language_rules["rotation"])
         if language not in supported:
             language = campaign.language_rules["rotation"][day.toordinal() % len(campaign.language_rules["rotation"])]
@@ -577,6 +613,11 @@ class DailyFlow:
                 reasons.append(f"The headline and all on-image text must be written in {LANGUAGES[copy.language]}")
             if not caption_language_ok(clean_caption(campaign, copy.caption, footer_too=False), copy.language):
                 reasons.append(f"The caption must be written in {LANGUAGES[copy.language]}, the same language as the post")
+            if not idea and history:
+                repeated = await self.repeats(copy, history)
+                if repeated:
+                    reasons.append("This topic was already posted recently (" + repeated + "). Choose a clearly DIFFERENT "
+                                   "condition, trigger or subject that is not in recent_do_not_repeat")
             if not reasons:
                 return copy
             if reasons == [UNAVAILABLE]:

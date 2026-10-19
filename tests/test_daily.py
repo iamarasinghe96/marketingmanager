@@ -679,3 +679,20 @@ async def test_forgotten_picture_uses_yesterdays_post_instead_of_todays_title(ap
     assert len(today) == 1 and today[0]["state"] == "awaiting_approval"
     assert today[0]["caption"].startswith("Smoke can irritate the airways.")
     assert Copy.model_validate_json(today[0]["copy"]).language == "en"
+
+
+async def test_topic_already_on_the_page_is_rewritten(app,monkeypatch):
+    from bot.daily import RepeatCheck
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    app.meta.recent_posts = AsyncMock(return_value=[{"date":"2026-10-01","posted_caption_start":"නාසය ආශ්‍රිත ආසාත්මිකතා (Allergic Rhinitis) යනු..."}])
+    app.text.json = AsyncMock(side_effect=[RepeatCheck(repeat=True,matches="2026-10-01 Allergic rhinitis"),RepeatCheck(repeat=False)])
+    await app.daily.on_text({"message_id":1,"text":"hi english"})
+    calls = app.text.write.await_args_list
+    assert len(calls) == 2
+    history, correction = calls[0].args[2], calls[1].args[6]
+    assert history[-1]["posted_caption_start"].startswith("නාසය")
+    assert "already posted recently" in str(correction) and "Allergic rhinitis" in str(correction)
+    # An owner-chosen topic is never blocked.
+    app.store.execute("DELETE FROM sessions")
+    app.text.json = AsyncMock(side_effect=AssertionError("no repeat check for the owner's own idea"))
+    await app.daily.start(app.daily.today(), idea="allergic rhinitis again, please", language="en")

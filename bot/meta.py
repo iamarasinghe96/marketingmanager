@@ -104,6 +104,28 @@ class MetaClient:
                 results.append(f"{c.name}: unable to verify token. Check internet and Meta app settings, then rerun setup.")
         return results
 
+    async def recent_posts(self,campaign,days=60):
+        """What is really on the page lately (whoever posted it): date + start of each caption."""
+        token = self.page_token(campaign)
+        cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+        posts = []
+        try:
+            data = await self.graph("GET", campaign.instagram_account_id + "/media", token,
+                                    params={"fields": "caption,timestamp", "limit": 50})
+            items = [(x.get("timestamp",""), x.get("caption","")) for x in data.get("data",[])]
+        except APIError:
+            data = await self.graph("GET", campaign.facebook_page_id + "/posts", token,
+                                    params={"fields": "message,created_time", "limit": 50})
+            items = [(x.get("created_time",""), x.get("message","")) for x in data.get("data",[])]
+        for when, text in items:
+            try:
+                moment = datetime.fromisoformat(when.replace("Z","+00:00").replace("+0000","+00:00"))
+            except ValueError:
+                continue
+            if moment.timestamp() >= cutoff and text.strip():
+                posts.append({"date": moment.date().isoformat(), "posted_caption_start": " ".join(text.split())[:220]})
+        return posts
+
     async def instagram_limit(self,campaign,token):
         data = await self.graph("GET",campaign.instagram_account_id + "/content_publishing_limit",token,
                                 params={"fields":"quota_usage,config"})
