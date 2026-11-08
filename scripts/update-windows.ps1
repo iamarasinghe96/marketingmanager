@@ -38,7 +38,8 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Host 'Could not clear today''s session; send "hi" as usual.' }
 } finally {
     if ($wasRunning) {
-        & $pythonConsole -m bot.launcher --start-only
+        # Reopen the window; the bot runs while it is open.
+        Start-Process -FilePath (Join-Path $projectRoot '.venv\Scripts\pythonw.exe') -ArgumentList '-m','bot.launcher' -WorkingDirectory $projectRoot
     }
 }
 Write-Host 'Marketing Manager updated. Other processes were untouched.'

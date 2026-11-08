@@ -51,13 +51,13 @@ The installer checks for **Python 3.12**, offers a user-confirmed winget install
 
 The wizard makes live tests for Telegram, Groq, Gemini text and Meta, and prints a ✓ or ✗ with repair instructions. It sends you a Telegram connection test but never publishes anything. Fix failed items in `secrets.txt` and double-click `setup.bat` to rerun it. Stop Marketing Manager before rerunning setup.
 
-When setup succeeds, installation creates **Marketing Manager** and **Stop Marketing Manager** desktop shortcuts and registers a boot task. Windows will ask for the Windows account/password so Task Scheduler can run it while you are logged out. The bot does not save that password. Run the installer from your Administrator RDP session; no other scheduled tasks are changed.
+When setup succeeds, installation creates one **Marketing Manager** desktop icon (also placed in your Startup folder, so it opens when you log in). The bot runs while the Marketing Manager window is open; closing the window stops it. When you leave the VPS, disconnect RDP rather than signing out, so the window stays open. No other scheduled tasks or processes are changed.
 
 ## 4. Use the desktop icon
 
 Double-click **Marketing Manager**. It starts a hidden background process if needed, or reports that the existing instance is running. A small status window shows the accounts, token health, next jobs and last heartbeat, with **View log** and **Refresh** buttons. Closing that window leaves the bot running.
 
-Use `/help` in Telegram for the complete command guide. **Stop Marketing Manager** requests a graceful shutdown; it lets the current action finish and saves the state. It does not terminate a process by name or PID.
+Use `/help` in Telegram for the complete command guide. Closing the Marketing Manager window requests a graceful shutdown; the current action finishes and the state is saved. No process is terminated by name or PID.
 
 ## 5. The daily flow in Telegram
 

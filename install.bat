@@ -42,7 +42,7 @@ if not exist secrets.txt (
 if errorlevel 1 goto failed
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\scripts\install-windows.ps1"
 if errorlevel 1 goto failed
-echo Setup complete. Double-click Marketing Manager on your desktop.
+echo Setup complete. Double-click Marketing Manager on your desktop. The bot runs while its window is open; close the window to stop it.
 echo Keep DRY_RUN=true until you have reviewed the sample designs.
 pause
 exit /b 0
