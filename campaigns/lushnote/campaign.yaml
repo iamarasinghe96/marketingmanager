@@ -1,7 +1,7 @@
 name: LushNote
 wordmark: LUSHNOTE
 aliases: [lushnote, lush note, ln]
-enabled: true
+enabled: false  # Off until the owner says to start LushNote posts.
 # Daily prompts start on this date.
 active_from: 2026-11-01
 style: lushnote

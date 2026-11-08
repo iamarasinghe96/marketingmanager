@@ -1076,7 +1076,9 @@ class DailyFlow:
         lines = [f"Daily greeting: {greeting:%H:%M} {self.config['timezone']}",
                  "Active today: " + (", ".join(c.name for c in self.active(day)) or "none")]
         for c in self.campaigns.values():
-            if c.active_from and day < c.active_from:
+            if not c.enabled:
+                lines.append(f"{c.name}: switched off")
+            elif c.active_from and day < c.active_from:
                 lines.append(f"{c.name}: paused until {c.active_from:%d %b %Y}")
         for s in self.sessions(day):
             lines.append(f"Today · {self.campaigns[s['campaign']].name}{' (own post)' if s['kind'] == 'own' else ''}: {s['state'].replace('_', ' ')}")
