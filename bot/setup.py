@@ -90,7 +90,9 @@ async def wizard():
         if not missing:
             try:
                 results = await MetaClient(client,settings,secrets,store).exchange(campaigns)
-                report("META_APP_ID + META_APP_SECRET + META_USER_TOKEN",True,"App identity checked; user token upgraded")
+                saved = any("saved Page token" in message for _,_,message in results)
+                report("META_APP_ID + META_APP_SECRET + META_USER_TOKEN",True,
+                       "App checked; using the saved Page tokens" if saved else "App identity checked; user token upgraded")
                 for slug,ok,message in results:
                     report(campaigns[slug].name + " accounts",ok,message)
             except Exception as exc:

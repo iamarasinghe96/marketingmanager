@@ -146,3 +146,21 @@ async def test_linkedin_introspection_checks_scopes(environment):
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={"active":False}))) as client:
         with pytest.raises(APIError,match="inactive"):
             await LinkedInClient(client,settings,secrets,store).introspect("token")
+
+
+async def test_expired_explorer_token_falls_back_to_saved_page_token(environment):
+    settings,campaign,store,_,_=environment
+    secrets={"META_APP_ID":"app123","META_APP_SECRET":"appsecret","META_USER_TOKEN":"expired"}
+    meta=MetaClient(None,settings,secrets,store)
+    store.save_token("meta_page",campaign.facebook_page_id,"permanent",None)
+    async def response(method,path,token,**kwargs):
+        assert path=="debug_token"
+        valid = kwargs["params"]["input_token"]=="permanent"
+        return {"data":{"is_valid":valid,"app_id":"app123"}}
+    meta.graph=AsyncMock(side_effect=response)
+    reports=await meta.exchange({campaign.slug:campaign})
+    assert reports==[(campaign.slug,True,reports[0][2])] and "saved Page token" in reports[0][2]
+    # No saved token: the expired user token is still reported.
+    store.execute("DELETE FROM tokens")
+    with pytest.raises(APIError,match="invalid"):
+        await meta.exchange({campaign.slug:campaign})

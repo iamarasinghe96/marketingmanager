@@ -39,6 +39,10 @@ class MetaClient:
         info = await self.graph("GET","debug_token",app_token,params={"input_token":short})
         debug = info["data"]
         if not debug.get("is_valid") or str(debug.get("app_id")) != self.secrets["META_APP_ID"]:
+            # The Graph API Explorer token expires within hours, but the Page tokens saved from it do not.
+            saved = await self.saved_page_tokens(campaigns, app_token)
+            if saved:
+                return saved
             raise APIError("Meta", "User token is invalid or belongs to a different app. Select your Business app in Graph API Explorer.")
         long = await request(self.client,"Meta OAuth","GET",self.base + "/oauth/access_token",safe_retry=True,
                              params={"grant_type":"fb_exchange_token","client_id":self.secrets["META_APP_ID"],
@@ -82,6 +86,22 @@ class MetaClient:
             self.store.save_token("meta_page",c.facebook_page_id,token,expiry)
             label = "Page + Instagram connected. Ensure Instagram is Business for story publishing. " + ("Token has no scheduled expiry (revocable)." if not expires else "Token has an expiry; daily checks will alert you.")
             reports.append((c.slug,True,label))
+        return reports
+
+    async def saved_page_tokens(self,campaigns,app_token):
+        """Reports for the Page tokens already saved, or [] if any page has none that still works."""
+        reports = []
+        for c in campaigns.values():
+            if not c.enabled:
+                continue
+            row = self.store.token("meta_page",c.facebook_page_id)
+            if not row:
+                return []
+            data = (await self.graph("GET","debug_token",app_token,params={"input_token":row["value"]}))["data"]
+            if not data.get("is_valid") or str(data.get("app_id")) != self.secrets["META_APP_ID"]:
+                return []
+            reports.append((c.slug,True,"Using the saved Page token (still valid). META_USER_TOKEN has expired, which is "
+                                        "normal; only replace it if this page stops working."))
         return reports
 
     async def health(self,campaigns):
