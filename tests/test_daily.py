@@ -721,3 +721,21 @@ def test_lushnote_is_off_in_the_real_settings():
     import yaml
     from bot.config import ROOT
     assert yaml.safe_load((ROOT/"campaigns"/"lushnote"/"campaign.yaml").read_text(encoding="utf-8"))["enabled"] is False
+
+
+async def test_approve_picks_the_post_with_a_picture(app,monkeypatch,tmp_path):
+    own_reader(app)
+    at(monkeypatch,"2026-10-05T03:00:00+00:00")
+    await app.daily.on_text({"message_id":1,"text":"hi english"})  # daily post, still waiting for its image
+    await app.daily.on_photo({"message_id":2,"caption":"own post for the clinic"},image(tmp_path))
+    own = app.store.one("SELECT * FROM sessions WHERE kind='own'")
+    assert own["state"] == "awaiting_approval"
+    await app.daily.on_text({"message_id":3,"text":"Approve"})
+    assert app.daily.session(own["id"])["state"] == "published"
+    assert not any("Which post" in str(c.args[0]) for c in app.telegram.send.await_args_list)
+
+
+def test_buttons_tell_same_page_posts_apart(app):
+    labels = {app.daily.button_label({"campaign":"allergy-asthma-centre","copy":None,"kind":k,"state":st,"image_path":None})
+              for k,st in (("daily","awaiting_image"),("own","awaiting_approval"))}
+    assert len(labels) == 2

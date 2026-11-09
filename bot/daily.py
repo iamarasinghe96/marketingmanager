@@ -396,6 +396,13 @@ class DailyFlow:
             return
         if not replied and not is_approval(text) and not is_new_prompt(text) and await self.understand(day, text):
             return
+        if not replied and is_approval(text):
+            # "approve" means the post(s) that have a picture; never ask about one still waiting for its image.
+            ready = [x for x in self.sessions(day, ("awaiting_approval", "failed")) if x["image_path"]]
+            if len(ready) == 1:
+                return await self.act(ready[0], text)
+            if len(ready) > 1:
+                return await self.choose(ready, {"text": text}, "Which post should I publish?")
         session = replied or await self.pick(day, ("awaiting_approval", "awaiting_image", "failed"), {"text": text})
         if session is False:
             return
@@ -514,11 +521,20 @@ class DailyFlow:
             if session and session["state"] == "awaiting_approval":
                 await self.edit(session, caption)
 
+    def button_label(self, session):
+        """Tell posts apart even when two belong to the same page: topic, own post, what it's waiting for."""
+        label = self.campaigns[session["campaign"]].name
+        if session["copy"]:
+            label = Copy.model_validate_json(session["copy"]).topic or label
+        if session["kind"] == "own":
+            label += " (your own post)"
+        return (label[:48] + " · " + waiting_for(session))[:64]
+
     async def choose(self, sessions, payload, prompt):
         interaction = uuid.uuid4().hex[:12]
         self.store.execute("INSERT INTO interactions VALUES(?,?,?,?)",
                            (interaction, "daily", json.dumps(payload, ensure_ascii=False), stamp()))
-        buttons = [[{"text": self.campaigns[s["campaign"]].name[:60], "callback_data": f"s:{interaction}:{s['id']}"}] for s in sessions]
+        buttons = [[{"text": self.button_label(s), "callback_data": f"s:{interaction}:{s['id']}"}] for s in sessions]
         await self.telegram.send(prompt, buttons)
 
     async def pick(self, day, states, payload):
